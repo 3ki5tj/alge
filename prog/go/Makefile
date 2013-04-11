@@ -5,7 +5,7 @@
 CC=icc -O3 -Wall -Wunused -march=native
 LM=
 
-APP=gomdr
+APP=gomdr gomdnc
 
 all: $(APP)
 

@@ -107,17 +107,25 @@ INLINE double alged_getalpha(const alged_t *al, int i)
 
 #define alged_getcorr1(al, i) alged_getcorr2(al, i, 0)
 
-/* return the correction: (-1/2) d < e^2 > / dx
+/* return the correction: (-1/2) d < dx^2 > / dx
  *  logical version, so no derm, and derp
  * the updating to the force stops at the fixed point:
  *    < dx + corr. > = 0
+ * or
+ *    < dx > - (1/2) d < dx^2 > / dx = 0
  * the mean force f = d (log rho) / dx is updated as
  *   f += alpha (dx + corr.)
- *   */
+ *
+ * the formula is derived from the detail balance
+ *   rho(x) p(x, eps) = rho(x + eps) p(x + eps, -eps)
+ * if rho(x) == rho(x + eps), then
+ *   \int p(x, eps) eps = \int p(x, -eps) eps + \int dp/dx eps^2
+ * which is < eps > = -<eps> + d < eps^2 > / dx
+ * */
 INLINE double alged_getcorr2(const alged_t *al, int i, int refl)
 {
   int im = i - 1, ip = i + 1;
-  double e2o, e2n;
+  double e2o, e2n, dx = 2 * al->dx;
 
   /* the correction is adjusted by the boundary conditions
    * for a reflective boundary, we simply set it to be zero
@@ -127,16 +135,23 @@ INLINE double alged_getcorr2(const alged_t *al, int i, int refl)
   if (im < 0) {
     /* an artifically negative `f' makes more negative
       * which encourages a positive `dx' to get back in range */
-    return refl ? 0 : -al->derm;
+    if (!refl) return -al->derm;
+    /* in case it is reflective, we can also just return 0 */
+    im = 0;
+    ip = 1;
+    dx = al->dx;
   } else if (ip >= al->n) {
-    return refl ? 0 : al->derp;
-  } else {
-    if (al->cc[im] < al->mindata || al->cc[ip] < al->mindata)
-      return 0;
-    e2o = al->e2[im]/al->cc[im];
-    e2n = al->e2[ip]/al->cc[ip];
-    return -0.5f * (e2n - e2o) / (2. * al->dx);
+    if (!refl) return al->derp;
+    im = al->n - 2;
+    ip = al->n - 1;
+    dx = al->dx;
   }
+
+  if (al->cc[im] < al->mindata || al->cc[ip] < al->mindata)
+    return 0; /* set the correction to zero if too few data points */
+  e2o = al->e2[im]/al->cc[im];
+  e2n = al->e2[ip]/al->cc[ip];
+  return -0.5f * (e2n - e2o) / dx;
 }
 
 
@@ -221,7 +236,10 @@ static int alged_getacc(alged_t *al, double x1, double x0, int refl,
   double dv; /* d log(rho) */
   int accb, accl;
 
-  /* compute the Metropolis acceptance rate */
+  /* compute the Metropolis acceptance rate
+   * dv = d log(rho) = \int^1_0 al->f
+   * dv > 0 means moving to a more populated region
+   * which therefore should be biased against */
   dv = alged_dh0(al, x1, x0);
   if (dlnrho) *dlnrho = dv;
   accb = accl = (dv <= 0 || rnd0() < exp(-dv));

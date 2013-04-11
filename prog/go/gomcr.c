@@ -75,7 +75,7 @@ void run(void)
     0, 1, mindata, derm, derp);
 
   go = cago_open(fnpdb, kb, ka, kd1, kd3, nbe, nbc, rcc);
-  cago_initmd(go, 0.1, 1.f/tp);
+  cago_initmd(go, 0.1, tp);
   printf("init rmsd %g\n", go->rmsd);
 
   go->dof = 3 * go->n; /* because we are doing mc */

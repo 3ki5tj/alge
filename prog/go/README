@@ -1,0 +1,33 @@
+Overview
+=========
+
+The purpose of the programs here is to sampling a flat distribution in MD
+  along a reaction coordinates whose derivatives are not readily computed.
+The technique used here is hybrid MC that threat a short MD segment as
+  Monte Carlo trial, and accept it only by a probability computed from 
+  integrating the mean force.
+
+
+ Code 
+=======
+ *  gomdr:    flat distribution along RMSD in MD
+ *  gomcr:    flat distribution along RMSD in MC (for comparison)
+ *  gomdnc:   flat distribution along number-of-contacts in MD
+
+
+Notes
+======
+
+In hybrid MC, we have to reset the velocities after a trajectory segment,
+  no matter it is accepted or rejected.
+Several `smaller' changes are used, first we can multiple all velocities
+  by the same 3x3 unitary (rotation + a possible reflection) matrix.
+This proves to be working. However, limit to random rotation or reflection
+  only does not work.
+Trajectory reversal does not work.
+
+
+
+
+
+
