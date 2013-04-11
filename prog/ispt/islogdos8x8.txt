@@ -1,0 +1,1 @@
+../../../common/ising2/data/islogdos8x8.txt
