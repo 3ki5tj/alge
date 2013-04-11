@@ -16,14 +16,14 @@
 
 int epmin = -1920, epmax = -800, epdel = 16, order = 0;
 double nsweeps = 1000000, nsteps;
-double alf0 = 5e-4, alfc = 5.0, beta0 = 1.4;
+double alf0 = 5e-4, alfc = 1.0, beta0 = 1.4;
 double mindata = 1000.0;
 int nevery  = 1000000;
 int nreport = 100000000;
 char *fnhis = "ep.his";
 char *fnout = "pt.e";
 int seglen = 10;
-int boundary = 0; /* 0: smooth; 1: reflective */
+int boundary = 1; /* 0: smooth; 1: reflective */
 double derm = 0.05f, derp = 0.1f;
 double dermax = 10.f;
 
@@ -144,7 +144,7 @@ static void run(void)
 {
   potts_t *pt = pt2_open(L, PT2_Q);
   alge_t *al;
-  double *ehis, *eacc, *einc, t, duc;
+  double *ehis, *eacc, *einc, t, ave2 = 0, alf = 0, duc = 0;
   int ie, de, it = 0, u1, u0, du;
 
   al = alge_open(epmin, epmax, epdel, beta0);
@@ -175,12 +175,14 @@ static void run(void)
     if (++it % seglen == 0) {
       u1 = pt->E;
       du = u1 - u0;
-      alge_update(al, u0, du, alf0, alfc, mindata, boundary,
-          derm, derp, -dermax, NULL, &duc);
+      //alge_update(al, u0, du, alf0, alfc, mindata, boundary,
+      //    derm, derp, -dermax, NULL, &duc);
+      alge_fupdate(al, u0, du, alf0, alfc, 
+          10.0, -dermax, dermax, &alf, &ave2);
       u0 = u1; /* set the new start point */
 
       if (it % nevery == 0) {
-        printf("t %g, ep %d, du %d, %g\n", t, pt->E, du, duc);
+        printf("t %g, ep %d, du %d, e2 %g, alf %g\n", t, pt->E, du, ave2, alf);
         if (it % nreport == 0) {
           saveall(al, ehis, eacc, einc, fnhis);
           alge_save(al, fnout);

@@ -108,7 +108,6 @@ INLINE double alge_getcorr(const alge_t *al, int i,
   double e2o, e2n, dx = 2 * al->dx;
 
   /* the correction is adjusted by the boundary conditions
-   * for a reflective boundary, we simply set it to be zero
    * for a smooth boundary, we try to use `derm' and `derp',
    * which are to be gauged carefully by experimenting,
    * to the make the distribution continuous */
@@ -131,30 +130,39 @@ INLINE double alge_getcorr(const alge_t *al, int i,
 }
 
 
-/* update data and mean force
+/* return the average < e^2 > at bin `i0' and `i1' */
+INLINE double alge_getden(const alge_t *al, int i0, int i1)
+{
+  double cc = al->cc[i0] + al->cc[i1];
+  double e2 = al->e2[i0] + al->e2[i1];
+  /* (e20 + e21) / (cc0 + cc1) is roughly < e2 >_x of `x' in the middle
+   * even if the distribution is slightly tilded, the shift in `x'
+   * for positive and negative `eps' should still sum to the full `eps'
+   * returns unity by default */
+  return (cc > 0 && e2 > 0) ? (e2 / cc) : 1.0;
+}
+
+/* fractional update data and mean force, with the denominator < e^2 >
  * `x0' is the start point, `dx_l' is the logical change of `x'
  * the mean force updating amplitude is min{`a0', `ac'/cc}
  * `mindata' is the minimal number of data points to apply
  *    the correction, see _getcorr()
- * `refl' mean if the boundary condition is reflective
- *    if `refl' == 0, `derm' and `derp' are used for the corrections
- *    at the boundaries, otherwise the two are unused
- * `mfmax' is the maximal allowed mean force amplitude
- *    if negative, it means the mean force has to be positive
+ * `delmax' is maximal amount of the allowed e / < e^2 >
+ * (`mfmin', `mfmax') is the allowed mean force range
  * `*alpha' is the updating amplitude
- * `*corr' is the O(1/N) mean-force correction */
-INLINE double alge_update(alge_t *al, int x0, int dx_l,
+ * `*denom' is the < e^2 > used */
+INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
     double a0, double ac,
-    double mindata, int refl, double derm, double derp,
-    double mfmax, double *alpha, double *corr)
+    double delmax, double mfmin, double mfmax,
+    double *alpha, double *denom)
 {
-  double alf, dxc;
+  double alf, dxc, den;
   double dxmax = dblmax(fabs(dx_l), al->dx);
-  int id = alge_getidx(al, x0);
+  int id = alge_getidx(al, x0), idn = alge_getidx(al, x0 + dx_l);
 
   /* in reflective boundary, x0 shouldn't be out of boundary
    * we don't let this to pollute the data */
-  if (refl && (x0 < al->xmin || x0 >= al->xmax)) return 0;
+  if (x0 < al->xmin || x0 >= al->xmax) return 0;
 
   /* update data */
   al->cc[id] += 1;
@@ -164,14 +172,12 @@ INLINE double alge_update(alge_t *al, int x0, int dx_l,
   alf = alge_getalpha(al, id, a0, ac);
   if (alpha) *alpha = alf;
 
-  /* compute the O(1/N) correction */
-  dxc = alge_getcorr(al, id, mindata, refl, derm, derp);
-  dxc = dblconfine(dxc, -dxmax, dxmax);
-  if (corr) *corr = dxc;
+  /* compute the denominator < e^2 > */
+  den = alge_getden(al, id, idn);
+  if (denom) *denom = den;
 
-  al->f[id] += alf * (dx_l + dxc);
-  if (mfmax > 0) return al->f[id] = dblconfine(al->f[id], -mfmax, mfmax);
-  else return al->f[id] = dblconfine(al->f[id], 0, fabs(mfmax));
+  al->f[id] += alf * dblconfine(2.0*dx_l/den, -delmax, delmax);
+  return al->f[id] = dblconfine(al->f[id], mfmin, mfmax);
 }
 
 
