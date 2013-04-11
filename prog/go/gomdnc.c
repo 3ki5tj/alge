@@ -32,7 +32,7 @@ real thermdt = 0.1f; /* thermostat dt */
 int hmcmethod = 0;
 
 
-/* for SH3 domain (1KIK), if rcc = 4.5 --> then Tc = 1.07 
+/* for SH3 domain (1KIK), if rcc = 4.5 --> then Tc = 1.07
  * the double-peak structure can be seen from the potential-energy,
  * rmsd, and number of contact distributions */
 char *fnpdb = "pdb/1KIK.pdb";
@@ -75,11 +75,11 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "--a0",  "%lf", &alf0,   "initial updating magnitude");
   argopt_add(ao, "--ac",  "%lf", &alfc,   "updating magnitude");
   argopt_add(ao, "--km",  "%lf", &derm,   "correction for x < xmin");
-  argopt_add(ao, "--kp",  "%lf", &derp,   "correction for x > xmax");  
+  argopt_add(ao, "--kp",  "%lf", &derp,   "correction for x > xmax");
   argopt_add(ao, "--Q0",  "%lf", &Qmin,   "minimal contact fraction");
   argopt_add(ao, "--Q1",  "%lf", &Qmax,   "maximal contact fraction");
   argopt_add(ao, "--dQ",  "%lf", &Qdel,   "contact fraction interval");
-  
+
   argopt_add(ao, "--every",   "%d", &nevery,  "print messages every this number of steps");
   argopt_add(ao, "--report",  "%d", &nreport, "save data every this number of steps");
   argopt_addhelp(ao, "-h");
@@ -95,7 +95,7 @@ static void run(void)
   int it, nc;
   double t;
   hist_t *hsep, *hsrmsd, *hscont;
-  
+
   alged_t *al;
   double alf, dv, duc;
   int idx; /* index of the current contact number `nc' */
@@ -108,7 +108,7 @@ static void run(void)
 
   go = cago_open(fnpdb, kb, ka, kd1, kd3, nbe, nbc, rcc);
   cago_initmd(go, fromrand ? -0.1 : 0.1, 0.0);
-  
+
   /* hybrid MC: save the start point */
   xnew(x0, go->n);
   xnew(v0, go->n);
@@ -116,7 +116,7 @@ static void run(void)
   cago_copyvec(go, v0, go->v);
   epot0 = go->epot;
   nc0 = cago_ncontacts(go, go->x, ncgam, NULL, NULL);
-  
+
   printf("epot %g (ref %g), rmsd %g, nc %d/%d = %g\n",
       go->epot, go->epotref, go->rmsd, nc0, go->ncont, 1.*nc0/go->ncont);
 
@@ -144,10 +144,10 @@ static void run(void)
     cago_vv(go, 1.0f, mddt);
     cago_rmcom(go, go->x, go->v);
     cago_vrescale(go, tp, thermdt);
-    
+
     go->rmsd = cago_rmsd(go, go->x, NULL); /* compute rmsd */
     nc = cago_ncontacts(go, go->x, ncgam, NULL, NULL);
-    
+
     ++it;
     if (it % seglen == 0) { /* attempt to do trajectory manipulation */
       nc0bk = nc0;
@@ -155,12 +155,12 @@ static void run(void)
       dncbk = dnc = nc1 - nc0;
 
       segtot += 1;
-      /* dv = d log(rho) = \int^1_0 mf 
+      /* dv = d log(rho) = \int^1_0 mf
        * dv > 0 means moving to a more populated region
        * which therefore should be biased against */
       //dv = alged_getf(al, nc0) * dnc;
       dv = alged_dh(al, nc1, nc0);
-     
+
       if (dv <= 0 || rnd0() < exp(-dv)) { /* keep it */
         segacc += 1;
         cago_copyvec(go, x0, go->x);
@@ -186,24 +186,24 @@ static void run(void)
       alf = alged_getalpha(al, idx);
       duc = alged_getcorr1(al, idx);
       duc = dblconfine(duc, -.5 * fabs(dnc), .5 * fabs(dnc));
-     
+
       /* the fixed point is located at < dnc + duc > = 0 */
       al->f[idx] = dblconfine(al->f[idx] + alf * (dnc + duc), -mfmax, mfmax);
-     
+
       /* set the new start point */
       idx = alged_getidx(al, nc0);
       nc = nc0;
-      go->epot = epot0; 
+      go->epot = epot0;
 
       hs_add1ez(hsep, go->epot, 0);
       hs_add1ez(hsrmsd, go->rmsd, HIST_VERBOSE);
       hs_add1ez(hscont, nc, HIST_VERBOSE);
-      
+
       if (it % nevery == 0) {
         printf("t %g, T %.3f, ep %.2f/%.2f, rmsd %.2f/%.2f, Q %d/%d=%.2f(%.2f), "
             "alf %.6f, mf %.3f, nc %d%+d (%+d, dv %.3f), segacc %.3f\n",
           t, go->tkin,
-          go->epot, hs_getave(hsep, 0, NULL, NULL), 
+          go->epot, hs_getave(hsep, 0, NULL, NULL),
           go->rmsd, hs_getave(hsrmsd, 0, NULL, NULL),
           nc, go->ncont, 1.0*nc/go->ncont,
           hs_getave(hscont, 0, NULL, NULL)/go->ncont,

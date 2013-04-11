@@ -2,11 +2,11 @@ typedef struct {
   double xmin, xmax, dx;
   int n;
   int order; /* the order of mean force interpolation (currently only 0)
-                0th order for fixed mean force within a bin 
+                0th order for fixed mean force within a bin
                 1st order for linear mean force */
   int flat; /* try to make histogram flat */
   double mindata; /* minimal number of data points to adopt the corrections */
-  double derm; /* the absolute value of the mean force correction for the left side 
+  double derm; /* the absolute value of the mean force correction for the left side
                   it is applied as a negative value */
   double derp; /* the absolute value of the mean force correction for the right side
                   it is applied as a positive value */
@@ -28,7 +28,7 @@ static alged_t *alged_open(double xmin, double xmax, double dx,
 {
   alged_t *al;
   int i;
-  
+
   xnew(al, 1);
   al->xmin = xmin;
   al->dx = dx; /* interval size */
@@ -83,7 +83,7 @@ INLINE double alged_getf1(const alged_t *al, double x)
 {
   int i;
   double x0, y;
-  
+
   if (x < al->xmin) return al->f[0];
   else if (x > al->xmax) return al->f[al->n];
   i = (int) ( (x - al->xmin) / al->dx );
@@ -105,22 +105,31 @@ INLINE double alged_getalpha(const alged_t *al, int i)
   return dblmin(al->a0, al->ac/al->cc[i]);
 }
 
-/* return the correction: (-1/2) d < e^2 > / dx 
+#define alged_getcorr1(al, i) alged_getcorr2(al, i, 0)
+
+/* return the correction: (-1/2) d < e^2 > / dx
+ *  logical version, so no derm, and derp
  * the updating to the force stops at the fixed point:
  *    < dx + corr. > = 0
  * the mean force f = d (log rho) / dx is updated as
- *   f += alpha (dx + corr.)       */
-INLINE double alged_getcorr1(const alged_t *al, int i)
+ *   f += alpha (dx + corr.)
+ *   */
+INLINE double alged_getcorr2(const alged_t *al, int i, int refl)
 {
   int im = i - 1, ip = i + 1;
   double e2o, e2n;
-  
+
+  /* the correction is adjusted by the boundary conditions
+   * for a reflective boundary, we simply set it to be zero
+   * for a smooth boundary, we try to use `derm' and `derp',
+   * which are to be gauged carefully by experimenting,
+   * to the make the distribution continuous */
   if (im < 0) {
     /* an artifically negative `f' makes more negative
-     * which encourages a positive `dx' to get back in range */
-    return -al->derm;
+      * which encourages a positive `dx' to get back in range */
+    return refl ? 0 : -al->derm;
   } else if (ip >= al->n) {
-    return al->derp;
+    return refl ? 0 : al->derp;
   } else {
     if (al->cc[im] < al->mindata || al->cc[ip] < al->mindata)
       return 0;
@@ -130,6 +139,38 @@ INLINE double alged_getcorr1(const alged_t *al, int i)
   }
 }
 
+
+/* update data and mean force
+ * `x0' is the start point, `dx_l' is the logical change of `x'
+ * `refl' is the boundary condition, see alge_getcorr2(),
+ * `mfmax' is the maximal allowed mean force amplitude
+ * `*alpha' is the updating amplitude
+ * `*duc' is the O(1/N) correction used in updating the mean force */
+INLINE double alged_update(alged_t *al, double x0, double dx_l, int refl,
+    double mfmax, double *alpha, double *ducorr)
+{
+  int idx;
+  double alf, duc;
+
+  idx = alged_getidx(al, x0);
+
+  /* update data */
+  al->cc[idx] += 1;
+  al->e2[idx] += dx_l * dx_l;
+
+  /* the updating amplitude */
+  alf = alged_getalpha(al, idx);
+  if (alpha) *alpha = alf;
+
+  /* compute the O(1/N) correction */
+  duc = alged_getcorr2(al, idx, refl);
+  duc = dblconfine(duc, -.5*fabs(dx_l), +.5*fabs(dx_l));
+  if (ducorr) *ducorr = duc;
+
+  return al->f[idx] = dblconfine(al->f[idx] + alf * (dx_l + duc),
+      -mfmax, mfmax);
+}
+
 #define alged_dh alged_dh0
 
 /* return the F difference zeroth order */
@@ -137,7 +178,7 @@ INLINE double alged_dh0(const alged_t *al, double xn, double xo)
 {
   int ixn, ixo, ix, sgn = 1;
   double dh = 0.;
-  
+
   if (xn < al->xmin) {
     if (xo < al->xmin)
       return (xn - xo) * al->f[0];
@@ -166,16 +207,36 @@ INLINE double alged_dh0(const alged_t *al, double xn, double xo)
   return dh;
 }
 
-/* return acceptance probabilities */
-static double alged_getacc(alged_t *al, double x1, double x0,
-    double *dv, double *acc0)
+/* return the acceptance rates for hybrid MC
+ * the logical rate indicates if a move x0 -> x1 were to be accepted
+ *    if judged by the mean force formula
+ * the boundary-adjusted rate takes into account the reflective (hard)
+ *    boundary condition, that is, a move out of (xmin, xmax) is rejected
+ * with a reflective boundary condition (`refl' = 1), we return
+ *    the boundary-adjusted rate `acc_b'; otherwise, the logical one `acc_l'
+ * */
+static int alged_getacc(alged_t *al, double x1, double x0, int refl,
+   int *acc_l, double *dx_l, int *acc_b, double *dlnrho)
 {
-  double acc1;
+  double dv; /* d log(rho) */
+  int accb, accl;
 
-  *dv = alged_dh0(al, x1, x0);
-  *acc0 = (dv <= 0 || rnd0() < exp(-dv));
-  acc1 = *acc0;
-  return acc1;
+  /* compute the Metropolis acceptance rate */
+  dv = alged_dh0(al, x1, x0);
+  if (dlnrho) *dlnrho = dv;
+  accb = accl = (dv <= 0 || rnd0() < exp(-dv));
+
+  if (dx_l) *dx_l = (accl ? x1 - x0 : 0);
+  if (x0 < al->xmin) { /* swoop in from the left */
+    accb = (x1 >= x0 - 1e-6);
+  } else if (x0 > al->xmax) { /* swoop in from the right */
+    accb = (x1 <= x0 + 1e-6);
+  } else { /* currently in range */
+    if (x1 < al->xmin || x1 > al->xmax) accb = 0;
+  }
+  if (acc_b) *acc_b = accb;
+  if (acc_l) *acc_l = accl;
+  return refl ? accb : accl;
 }
 
 /* save dh/de file */
@@ -184,15 +245,15 @@ static int alged_save(alged_t *al, const char *fn)
   FILE *fp;
   int i;
   double lng = 0., e2, cc, sc;
-  
+
   xfopen(fp, fn, "w", return -1);
   fprintf(fp, "# %d %g %g\n", al->n, al->xmin, al->dx);
-  
+
   /* compute the normalization factor */
   for (cc = 0, i = 0; i < al->n; i++)
     cc += al->cc[i];
   sc = 1.0/(cc * al->dx);
-  
+
   for (i = 0; i < al->n; i++) {
     if (i > 0) {
       if (al->order) lng += al->f[i-1] * al->dx;
@@ -200,7 +261,7 @@ static int alged_save(alged_t *al, const char *fn)
     }
     e2 = 0;
     if (al->cc[i] > 0.0) e2 = al->e2[i]/al->cc[i];
-    fprintf(fp, "%g %.6f %.6f %g %.6f %g\n", 
+    fprintf(fp, "%g %.6f %.6f %g %.6f %g\n",
       al->xmin + i * al->dx, al->f[i], lng, al->cc[i], e2, /* 5 param. */
       al->cc[i] * sc);
   }

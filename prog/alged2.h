@@ -17,7 +17,7 @@ static ad2_t *ad2_open(double xmin, double xmax, double dx,
 {
   ad2_t *al;
   int i, nm;
-  
+
   xnew(al, 1);
   al->xmin = xmin;
   al->dx = dx; /* interval size */
@@ -46,7 +46,7 @@ static ad2_t *ad2_open(double xmin, double xmax, double dx,
 static void ad2_close(ad2_t *al)
 {
   int i;
-  
+
   free(al->fx);
   free(al->fy);
   for (i = 0; i < al->n * al->m + 1; i++) {
@@ -60,7 +60,7 @@ static void ad2_close(ad2_t *al)
 INLINE int ad2_getid(const ad2_t *al, double x, double y)
 {
   int ix, iy;
-  
+
   if (x < al->xmin || x >= al->xmax || y < al->ymin || y >= al->ymax) {
     fprintf(stderr, "bad index, x %g, y %g\n", x, y);
     return -1;
@@ -94,14 +94,14 @@ INLINE void ad2_getf(const ad2_t *al, double x, double y,
 INLINE int ad2_getcorr(const ad2_t *al, int id, double *delx, double *dely)
 {
   int ix, iy, idx, idy;
-  
+
   ix = id / al->m; /* the outer dimension */
   iy = id % al->m;
   /* idx and idy */
   idx = ((ix + 1) % al->n) * al->m + iy;
   idy = ix * al->m + (iy + 1) % al->m;
   *delx = *dely = 0;
-  if (al->sxy[id]->s > MINDATA 
+  if (al->sxy[id]->s > MINDATA
       && al->sxy[idx]->s > MINDATA
       && al->sxy[idy]->s > MINDATA) {
     /* d < ex^2 > / dX */
@@ -120,7 +120,7 @@ INLINE int ad2_getcorr(const ad2_t *al, int id, double *delx, double *dely)
   } else {
     return 1;
   }
-} 
+}
 
 /* return the proper upating magnitude: alpha */
 INLINE double ad2_getalpha(const ad2_t *al, int id)
@@ -134,16 +134,16 @@ static int ad2_save(ad2_t *al, const char *fn)
   FILE *fp;
   int i, j, id;
   double xx, xy, yy, cc, sc;
-  
+
   xfopen(fp, fn, "w", return -1);
   fprintf(fp, "# %d %g %g %d %g %g\n",
     al->n, al->xmin, al->dx, al->m, al->ymin, al->dy);
-  
+
   /* compute the normalization factor */
   for (cc = 1e-6, id = 0; id < al->n * al->m; id++)
     cc += al->sxy[id]->s;
   sc = 1.0/(cc * al->dx * al->dy);
-  
+
   for (i = 0; i < al->n; i++) {
     for (j = 0; j < al->m; j++) {
       id = i * al->m + j;
@@ -151,8 +151,8 @@ static int ad2_save(ad2_t *al, const char *fn)
       xx = avn_getvar(al->sxy[id], 0, 0);
       xy = avn_getvar(al->sxy[id], 0, 1);
       yy = avn_getvar(al->sxy[id], 1, 1);
-      fprintf(fp, "%g %g %g %g %.6f %.6f %.6f %.6f %.6f\n", 
-        al->xmin + i * al->dx, al->ymin + j * al->dy, 
+      fprintf(fp, "%g %g %g %g %.6f %.6f %.6f %.6f %.6f\n",
+        al->xmin + i * al->dx, al->ymin + j * al->dy,
         cc, cc * sc, al->fx[id], al->fy[id], /* 6 parameters */
         xx, xy, yy);
     }

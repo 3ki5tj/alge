@@ -35,11 +35,11 @@ double mfmax = 100.0; /* maximal mean force */
 int doargs(int argc, char **argv)
 {
   argopt_t *ao = argopt_open(0);
- 
+
   argopt_add(ao, "-1", "%lf", &nsteps, "number of simulation steps");
   argopt_add(ao, "-T", "%r", &tp, "temperature");
   argopt_add(ao, "-a", "%r", &mcamp, "MC amplitude");
-  argopt_add(ao, "-l", "%d", &seglen, "segment length");  
+  argopt_add(ao, "-l", "%d", &seglen, "segment length");
   argopt_add(ao, "-F", "%r", &mf0, "default mean force");
   argopt_add(ao, "-f", NULL, &fnpdb, "name of the PDB file");
   argopt_add(ao, "-9", "%lf",&mindata,  "minimal number of data points");
@@ -55,7 +55,7 @@ int doargs(int argc, char **argv)
   argopt_parse(ao, argc, argv);
   argopt_dump(ao);
   return 0;
-} 
+}
 
 void run(void)
 {
@@ -77,7 +77,7 @@ void run(void)
   go = cago_open(fnpdb, kb, ka, kd1, kd3, nbe, nbc, rcc);
   cago_initmd(go, 0.1, 1.f/tp);
   printf("init rmsd %g\n", go->rmsd);
-  
+
   go->dof = 3 * go->n; /* because we are doing mc */
 
   xnew(x0, go->n);
@@ -89,7 +89,7 @@ void run(void)
   idx = alged_getidx(al, rmsd0);
 
   hsrmsd = hs_open1(0, 100.0, 0.01);
-  
+
   for (t = 1; t <= nsteps; t++) {
     etot += 1;
     eacc += cago_metro(go, mcamp, 1.f/tp);
@@ -117,21 +117,21 @@ void run(void)
       al->e2[ idx ] += drmsd * drmsd;
 
       alf = alged_getalpha(al, idx);
- 
+
       duc = alged_getcorr1(al, idx);
       duc = dblconfine(duc, -.5 * fabs(drmsd), .5 * fabs(drmsd));
       drmsd += duc;
 
       al->f[idx] = dblconfine(al->f[idx] + alf * drmsd, -mfmax, mfmax);
-      
+
       /* new start point */
       idx = alged_getidx(al, rmsd0);
-   
+
       go->rmsd = rmsd0;
       go->epot = epot0;
 
       hs_add1ez(hsrmsd, go->rmsd, HIST_VERBOSE);
-      
+
       if (it % nevery == 0) {
         printf("t %g, rmsd %g, acc %g, segacc %g, alf %g\n",
           t, go->rmsd, 1.*eacc/etot, 1.*segacc/segtot, alf);
@@ -139,14 +139,14 @@ void run(void)
       if (it % nreport == 0 || t >= nsteps) {
         hs_save(hsrmsd, fnhis, HIST_ADDAHALF);
         cago_writepos(go, go->x, NULL, fnpos);
-        alged_save(al, "go.e");        
+        alged_save(al, "go.e");
         it = 0;
       }
     }
   }
   cago_close(go);
   free(x0);
-  alged_close(al);  
+  alged_close(al);
 }
 
 int main(int argc, char **argv)

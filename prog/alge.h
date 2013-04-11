@@ -17,7 +17,7 @@ static alge_t *alge_open(int xmin, int xmax, int dx, double a0, double ac,
 {
   alge_t *al;
   int i;
-  
+
   xnew(al, 1);
   al->xmin = xmin;
   al->xmax = xmax;
@@ -81,7 +81,7 @@ INLINE double alge_getcorr(const alge_t *al, int i)
 {
   int im = i - 1, ip = i + 1;
   double e2o, e2n;
-  
+
   if (im < 0 || ip >= al->n || al->cc[im] < al->mindata || al->cc[ip] < al->mindata)
     return 0;
   e2o = al->e2[im]/al->cc[im];
@@ -95,7 +95,7 @@ INLINE double alge_getcorr1(const alge_t *al, int i)
 {
   int im = i - 1, ip = i + 1;
   double e2o, e2n;
-  
+
   if (im < 0) {
     return -al->derm;
   } else if (ip >= al->n) {
@@ -114,7 +114,7 @@ static double alge_dh0(const alge_t *al, int en, int eo)
 {
   int ien, ieo, ie, sgn = 1;
   double dh = 0.;
-  
+
   if (eo == en) return 0.;
   if (en < al->xmin) {
     dh += (en - al->xmin)*al->dh[0];
@@ -147,13 +147,13 @@ static int alge_save(alge_t *al, const char *fn)
   FILE *fp;
   int i;
   double lng = 0., cc, e2, dh, sc;
-  
+
   xfopen(fp, fn, "w", return -1);
- 
+
   for (sc = 0, i = 0; i < al->n; i++)
     sc += al->cc[i];
   sc = 1.0/(al->dx * sc);
-  
+
   fprintf(fp, "# %d %d %d\n", al->n, al->xmin, al->dx);
   for (i = 0; i < al->n; i++) {
     cc = e2 = dh = 0;
@@ -162,7 +162,7 @@ static int alge_save(alge_t *al, const char *fn)
       if (cc > 0.0) e2 = al->e2[i]/cc;
       dh = al->dh[i];
     }
-    fprintf(fp, "%d %.6f %.6f %g %.6f %g\n", 
+    fprintf(fp, "%d %.6f %.6f %g %.6f %g\n",
       al->xmin + i * al->dx, dh, lng, cc, e2, cc * sc);
     lng += al->dh[i] * al->dx;
   }

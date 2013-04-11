@@ -14,6 +14,9 @@ $(APP): Makefile zcom.h
 %:: %.c
 	$(CC) -o $@ $< $(LM)
 
+$(APP): alged.h
+
+
 clean:
 	rm -f $(APP) *~ a.out *.dat *.his *.dis *.pos go.e
 
