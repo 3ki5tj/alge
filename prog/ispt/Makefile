@@ -1,11 +1,11 @@
 
 # optimized compiling
-CC=gcc -O3 -Wall -Wunused -march=native
-LM=-lm
-#CC=icc -O3 -Wall -Wunused -march=native
-#LM=
+#CC=gcc -O3 -Wall -Wunused -march=native
+#LM=-lm
+CC=icc -O3 -Wall -Wunused -march=native
+LM=
 
-APP=is0 pt0 pt1
+APP=is1 pt0 pt1
 
 all: $(APP)
 

@@ -14,17 +14,17 @@
 #include "zcom.h"
 #include "alge.h"
 
-int flathis = 0; /* try to produce a flat histogram */
 int epmin = -1920, epmax = 0, epdel = 16;
 double nsweeps = 1e5, nsteps;
-/* amp0 must be small enough */
-double amp0 = 5e-4, ampc = 0.5, beta0 = 0.4;
+/* alf0 must be small enough */
+double alf0 = 5e-4, alfc = 0.5, beta0 = 0.4;
 int nevery  = 1000000;
 int nreport = 100000000;
 double mindata = 1000.0;
-char *fnhis = "epot.his";
+char *fnhis = "ep.his";
 char *fnout = "is.e";
 int seglen = 10;
+int boundary = 0; /* 0: smooth; 1: reflective */
 double derm = 0.4f, derp = 0.1f;
 double dermax = 100.f;
 
@@ -32,21 +32,21 @@ double dermax = 100.f;
 static void doargs(int argc, char **argv)
 {
   argopt_t *ao = argopt_open(0);
-  
-  argopt_add(ao, "-1", "%lf", &nsweeps, "number of simulation SWEEPS (input) or steps (display)");
-  argopt_add(ao, "-f", "%b",  &flathis, "flat-distribution simulation");
-  argopt_add(ao, "-(", "%d",  &epmin,   "minimal energy");
-  argopt_add(ao, "-)", "%d",  &epmax,   "maximal energy");
-  argopt_add(ao, "-:", "%d",  &epdel,   "energy interval");
-  argopt_add(ao, "-m", "%lf", &amp0,    "maximal amplitude");
-  argopt_add(ao, "-a", "%lf", &ampc,    "alpha_c");
-  argopt_add(ao, "-l", "%d",  &seglen,  "the number of steps to be treated as a perturbation");  
-  argopt_add(ao, "-q", "%lf", &mindata, "minimal number of data points");
-  argopt_add(ao, "-K", "%lf", &dermax,  "maximal temperature");
-  argopt_add(ao, "--km", "%lf", &derm, "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp, "correction for x > xmax");
-  argopt_add(ao, "-o", NULL,  &fnout,   "name of the output file");
-  argopt_add(ao, "-H", NULL,  &fnhis,   "name of the histogram file");
+
+  argopt_add(ao, "-1", "%lf", &nsweeps,   "number of simulation SWEEPS (input) or steps (display)");
+  argopt_add(ao, "-(", "%d",  &epmin,     "minimal energy");
+  argopt_add(ao, "-)", "%d",  &epmax,     "maximal energy");
+  argopt_add(ao, "-:", "%d",  &epdel,     "energy interval");
+  argopt_add(ao, "-l", "%d",  &seglen,    "the number of steps to be treated as a perturbation");
+  argopt_add(ao, "-q", "%lf", &mindata,   "minimal number of data points");
+  argopt_add(ao, "-K", "%lf", &dermax,    "maximal temperature");
+  argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective");
+  argopt_add(ao, "--a0", "%lf", &alf0,    "maximal amplitude");
+  argopt_add(ao, "--ac", "%lf", &alfc,    "alpha_c");
+  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
+  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");
+  argopt_add(ao, "-o",    NULL, &fnout,   "name of the output file");
+  argopt_add(ao, "-H",    NULL, &fnhis,   "name of the histogram file");
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
   argopt_add(ao, "--report",  "%d", &nreport, "interval of saving data");
   argopt_addhelp(ao, "-h");
@@ -59,23 +59,17 @@ static void doargs(int argc, char **argv)
 /* configuration move under modified Hamiltonian, return de */
 static int move(ising_t *is, const alge_t *al)
 {
-  static int steps = 0;
-  int id, eo, en = 0, de, h, acc;
-  double dh;
+  int id, de, h, acc;
 
   IS2_PICK(is, id, h);
   de = 2 * h;  /* h = si * sj, which becomes -h in a flip, E = - si * sj */
   if (de != 0) {
-    eo = is->E;
-    en = eo + de;
-    dh = alge_dh0(al, en, eo);
-    acc = (dh <= 0 || rnd0() < exp(-dh));
+    acc = alge_getacc(al, is->E + de, is->E, boundary,
+      NULL, &de, NULL, NULL);
   } else acc = 1;
 
-  if (acc) {
-    IS2_FLIP(is, id, h);
-  }
-  return acc * de;
+  if (acc) { IS2_FLIP(is, id, h); }
+  return de;
 }
 
 /* compute the reference beta */
@@ -148,12 +142,12 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
   for (lng[0] = 0, i = 0; i <= n; i++) {
     ene = EMIN + i * EDEL;
     if (ene < al->xmin) {
-      bet[i] = al->dh[0];
+      bet[i] = al->f[0];
     } else if (ene >= al->xmax) {
-      bet[i] = al->dh[ie]; /* use the last ie */
+      bet[i] = al->f[ie]; /* use the last ie */
     } else {
       ie = (ene - al->xmin)/al->dx;
-      bet[i] = al->dh[ie];
+      bet[i] = al->f[ie];
       lng[i + 1] = lng[i] + bet[i] * EDEL;
     }
   }
@@ -197,9 +191,8 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
   verr[6] /= i;
 
   xfopen(fp, fn, "w", return -1);
-  fprintf(fp, "# %d %d %d %d | %g\n",
-    al->n, al->xmin, al->dx,
-    al->flat, tot);
+  fprintf(fp, "# %d %d %d 1 | %g\n",
+    al->n, al->xmin, al->dx, tot);
   for (i = 0; i < ECNT; i++) {
     if (his[i] < 0.5)  continue;
     fprintf(fp, "%d %g %g %g %.6f %.6f %.6f %.6f %.6f\n",
@@ -219,11 +212,10 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
 static int run(ising_t *is, double trun)
 {
   alge_t *al;
-  double t, *ehis, *eacc, *einc, tote2 = 0., verr[8], du, duc;
-  int it = 0, ie, de, u0 = 0, u1, iu = 0;
+  double t, *ehis, *eacc, *einc, tote2 = 0., verr[8], duc;
+  int it = 0, ie, de, u0 = 0, u1, du = 0;
 
-  al = alge_open(epmin, epmax, epdel, amp0, ampc,
-    beta0, 0, flathis, derm, derp);
+  al = alge_open(epmin, epmax, epdel, beta0);
   /* equilibrate the system till is->E > epmin */
   for (t = 1; is->E <= epmin + 4; t++) {
     int id, h;
@@ -235,10 +227,9 @@ static int run(ising_t *is, double trun)
   xnew(ehis, ECNT);
   xnew(eacc, ECNT);
   xnew(einc, ECNT);
-  
+
   u0 = is->E;
-  iu = alge_getidx(al, u0);
-  
+
   for (t = 1; t <= trun; t++) {
     ie = (is->E - EMIN)/EDEL;
     ehis[ie] += 1;
@@ -251,23 +242,12 @@ static int run(ising_t *is, double trun)
     if (++it % seglen == 0) {
       u1 = is->E;
       du = u1 - u0;
-      
-      al->cc[iu] += 1;
-      al->e2[iu] += du * du; /* using du instead of du here avoid the peaks at the boundaries */
-      
-      duc = alge_getcorr1(al, iu);
-      du += duc;
-      al->dh[iu] += du * alge_getalpha(al, iu);
-      
-      /* the confinement is no longer necessary */
-      al->dh[iu] = dblconfine(al->dh[iu], 0, dermax);
-      
-      /* set the new start point */
-      u0 = u1;
-      iu = alge_getidx(al, u0);
-      
+      alge_update(al, u0, du, alf0, alfc, mindata, boundary,
+          derm, derp, -dermax, NULL, &duc);
+      u0 = u1; /* set the new start point */
+
       if (it % nevery == 0) {
-        printf("t %g, ep %d, du %g, %g, dh %g\n", t, is->E, du, duc, al->dh[iu]);
+        printf("t %g, ep %d, du %d, %g\n", t, is->E, du, duc);
         if (it % nreport == 0) {
           saveall(al, is->logdos, verr, ehis, eacc, einc, fnhis);
           alge_save(al, fnout);

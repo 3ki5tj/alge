@@ -1,0 +1,5 @@
+Notes
+* now use the reflective boundary by default (more robust)
+* icc 4m7s vs gcc 4m55s
+
+

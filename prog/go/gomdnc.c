@@ -29,6 +29,7 @@ real tp = 1.07f;
 real mddt = 0.002f;
 real thermdt = 0.1f; /* thermostat dt */
 int hmcmethod = 0;
+double hmcmutr = 1.0; /* velocity mutation rate */
 
 /* for SH3 domain (1KIK), if rcc = 4.5 --> then Tc = 1.07
  * the double-peak structure can be seen from the potential-energy,
@@ -47,11 +48,13 @@ double Qdel = 0.05;
 int contmin, contmax, contdel; /* to be determined */
 
 int seglen = 200; /* trajectory segment length */
-int boundary = 1; /* how to handle boundary conditions,
-    0: smooth (requires proper `derm' and `derp' values
-    1: reflective or hard (do not allow outward flows) */
 double alf0 = 0.001, alfc = 0.5;
-double mindata = 100.0, derm = 1.0, derp = 2.0;
+int boundary = 1; /* how to handle boundary conditions,
+    0: smooth (requires proper `derm' and `derp' values)
+    1: reflective or hard (no out-of-boundary-transitions) */
+double mindata = 100.0; /* minimal number of data points to use the correction */
+double derm = 0.2, derp = 0.5; /* limiting magnitude for smooth boundaries 
+                                  larger for tighter boundaries */
 double mf0 = 0; /* initial mean force */
 double mfmax = 1.0; /* maximal mean force magnitude */
 
@@ -68,6 +71,7 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-q", "%r",  &thermdt,   "time step for mc-vrescaling thermostat");
   argopt_add(ao, "-c", "%r",  &rcc,       "cutoff distance for defining contacts");
   argopt_add(ao, "-m", "%d",  &hmcmethod, "hybrid MC method, 0: random; 1: random matrix");
+  argopt_add(ao, "-r", "%lf", &hmcmutr,   "probability of mutating velocities");
 
   /* algorithm-E parameters */
   argopt_add(ao, "-l", "%d",  &seglen,    "segment length");
@@ -129,9 +133,8 @@ static void run(void)
   contmin = go->ncont * Qmin;
   contmax = go->ncont * Qmax;
   if ((contdel = go->ncont * Qdel) < 1) contdel = 1;
-  al = alged_open(contmin, contmax, contdel, alf0, alfc, mf0,
-      0 /* zeroth order mean force extrapolation */,
-      1 /* aiming at a flat histogram */, mindata, derm, derp);
+  al = alged_open(contmin, contmax, contdel, mf0,
+      0 /* zeroth order mean force extrapolation */);
 
   if (hmcmethod == 0) { /* random velocities */
     go->dof = 3 * go->n;
@@ -179,13 +182,14 @@ static void run(void)
     }
 
     if (hmcmethod == 0) {
-      md_mutv3d(go->v, go->n, tp);
+      md_mutv3d(go->v, go->n, tp, hmcmutr);
     } else if (hmcmethod == 1) {
       md_unimatv3d(go->v, go->n);
     }
 
     /* update alge data */
-    mf = alged_update(al, nc0bk, dnc_l, boundary, mfmax, &alf, &duc);
+    mf = alged_update(al, nc0bk, dnc_l, alf0, alfc,
+        mindata, boundary, derm, derp, mfmax, &alf, &duc);
 
     /* set the new start point */
     nc = nc0;

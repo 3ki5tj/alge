@@ -19,40 +19,43 @@ int nequil = 10000;
 int nevery = 1000;  /* print message every this number of steps */
 int nreport = 100000; /* save data every this number of steps */
 
-double mindata = 1000.f;
-/* boundary limiting strength, larger causes better confinement */
-double derm = 1, derp = 2;
-
 /* algorithm E stuff */
-int seglen = 5; /* segment length for a perturbation */
 double epmin = -500, epmax = -300, epdel = 5;
-int flathis = 1;
-double alfmax = 0.001, alfc = 0.3;
+int seglen = 5; /* segment length for a perturbation */
+double alf0 = 0.01, alfc = 1.0; 
+int boundary = 1; /* 0: smooth boundary, 1: reflective */
+double mindata = 1000.; /* minimal number of data points to use the corrections */
+double derm = 1, derp = 2; /* limiting magnitude for smooth boundaries 
+                                  larger for tighter boundaries */
+double mfmax = 100.0; /* maximal magnitude of tp0/tp */
 
 char *fnout = "lj.e";
-char *fnhis = "epot.his";
+char *fnhis = "ep.his";
 
 /* handle input arguments */
 static void doargs(int argc, char **argv)
 {
   argopt_t *ao = argopt_open(0);
-  argopt_add(ao, "-n", "%d", &N,        "number of particles");
-  argopt_add(ao, "-T", "%r", &tp0,      "temperature");
-  argopt_add(ao, "-r", "%r", &rho,      "density");
-  argopt_add(ao, "-c", "%r", &rcdef,    "cutoff distance");
-  argopt_add(ao, "-0", "%d", &nequil,   "number of equilibration steps");
-  argopt_add(ao, "-1", "%d", &nsteps,   "number of simulation steps");
-  argopt_add(ao, "-e", "%d", &nevery,   "interval of computing temperatures");
-  argopt_add(ao, "-l", "%d", &seglen,   "the number of steps to be treated as a perturbation");
-  argopt_add(ao, "-d", "%r", &mddt,     "time step for molecular dynamics");
-  argopt_add(ao, "-q", "%r", &thermdt,  "thermostat time step");
-  argopt_add(ao, "-9", "%lf",&mindata,  "minimal number of data points");
-  argopt_add(ao, "--a0", "%lf", &alfmax,"initial updating magnitude");
-  argopt_add(ao, "--ac", "%lf", &alfc,  "updating magnitude");
-  argopt_add(ao, "--km", "%lf", &derm,  "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp,  "correction for x > xmax");
-  argopt_add(ao, "-o", NULL, &fnout,    "output file");
-  argopt_add(ao, "-H", NULL, &fnhis,    "histogram file");  
+  argopt_add(ao, "-n", "%d",  &N,         "number of particles");
+  argopt_add(ao, "-T", "%r",  &tp0,       "temperature");
+  argopt_add(ao, "-r", "%r",  &rho,       "density");
+  argopt_add(ao, "-c", "%r",  &rcdef,     "cutoff distance");
+  argopt_add(ao, "-0", "%d",  &nequil,    "number of equilibration steps");
+  argopt_add(ao, "-1", "%d",  &nsteps,    "number of simulation steps");
+  argopt_add(ao, "-e", "%d",  &nevery,    "interval of computing temperatures");
+
+  argopt_add(ao, "-l", "%d",  &seglen,    "the number of steps to be treated as a perturbation");
+  argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
+
+  argopt_add(ao, "-d", "%r",  &mddt,      "time step for molecular dynamics");
+  argopt_add(ao, "-q", "%r",  &thermdt,   "thermostat time step");
+  argopt_add(ao, "-9", "%lf", &mindata,   "minimal number of data points");
+  argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
+  argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
+  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
+  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");
+  argopt_add(ao, "-o", NULL, &fnout,      "output file");
+  argopt_add(ao, "-H", NULL, &fnhis,      "histogram file");  
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
   argopt_add(ao, "--report",  "%d", &nreport, "interval of saving data");
   argopt_addhelp(ao, "-h");
@@ -65,16 +68,17 @@ static void doargs(int argc, char **argv)
 /* multicaonical molecular dynamics simulation */
 static void domd(lj_t *lj)
 {
-  int ie, t;
+  int t;
   alged_t *al;
   hist_t *hs;
   double k, u0, u1, du = 0, duc = 0, alf = 0;
 
-  al = alged_open(epmin, epmax, epdel, alfmax, alfc,
-    1.0/tp0, 0, flathis, mindata, derm, derp);
-  hs = hs_open(1, -800, 0, 1.0);
+  al = alged_open(epmin, epmax, epdel, 0., 
+      0 /* zeroth order mean force extrapolation */);
+  hs = hs_open1(-800, 0, 1.0);
 
-  /* try to equilibrate the system by running MD at tp0 */
+  /* equilibrate the system by regular MD at tp0
+   * till the potential energy falls in (xmin, xmax) */
   for (t = 1; t <= nequil; t++) {
     lj_vv(lj, mddt);
     lj_shiftcom(lj, lj->v);
@@ -89,40 +93,30 @@ static void domd(lj_t *lj)
   /* Note: lj->epots may be replaced by lj->epot
    * but it may significantly change f */
   u0 = lj->epots;
-  ie = alged_getidx(al, u0);
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
-    k = alged_getf(al, lj->epots);
+    k = alged_getf(al, lj->epots) + 1/tp0;
+    if (boundary == 1 && (lj->epots < epmin || lj->epots > epmax))
+      k = 1.;
+    k = dblmax(k, 0.05/tp0); /* the minimal scaling */
 
     lj_vvx(lj, k, mddt);
     lj_shiftcom(lj, lj->v);
-    
     lj_vrescalex(lj, tp0, thermdt);
-    hs_add1ez(hs, lj->epots, HIST_VERBOSE);
+    hs_add1ez(hs, lj->epots, 0);
 
     if (t % seglen == 0) {
       u1 = lj->epots;
       du = u1 - u0;
-
-      al->cc[ie] += 1.0;
-      al->e2[ie] += du * du;
-      alf = alged_getalpha(al, ie);
-
-      duc = alged_getcorr1(al, ie);
-      duc = dblconfine(duc, -.5 * fabs(du), .5 * fabs(du));
-      du += duc;
-
-      al->f[ie] = dblmax(al->f[ie] + alf * du, 0.001);
-
-      /* set the new start point */
-      u0 = u1;
-      ie = alged_getidx(al, u0);
+      alged_update(al, u0, du, alf0, alfc, mindata,
+          boundary, derm, derp, mfmax, &alf, &duc);
+      u0 = u1; /* set the new start point */
     }
 
     if (t % nevery == 0) {
-      printf("t %d, ep %g, du %g, %g, k %g, ie %d, alf %g, ek %g\n",
-        t, lj->epots/lj->n, du, duc, k, ie, alf, lj->ekin);
+      printf("t %g, ep %.2f, du %+.3f, %+.3f, k %g, alf %g\n",
+        1.*t, lj->epots, du, duc, k, alf);
 
       if (t % nreport == 0) {
         alged_save(al, fnout);

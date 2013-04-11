@@ -1,0 +1,4 @@
+Notes
+======
+Use icc as compiler, almost twice as fast as gcc.
+

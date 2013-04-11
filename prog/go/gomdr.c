@@ -29,6 +29,7 @@ real tp = 1.07f;
 real mddt = 0.002f;
 real thermdt = 0.1f; /* thermostat dt */
 int hmcmethod = 0;
+double hmcmutr = 1.0; /* velocity mutation rate */
 
 /* for SH3 domain (1KIK), if rcc = 4.5 --> then Tc = 1.07
  * the double-peak structure can be seen from the potential-energy,
@@ -41,14 +42,16 @@ char *fnrmsdhis = "rmsd.his";
 char *fnconthis = "nc.his";
 
 /* algorithm E parameters */
-double rmsdmin = 2.0, rmsdmax = 18, rmsddel = 0.5;
+double rmsdmin = 1.0, rmsdmax = 18, rmsddel = 0.5;
 
 int seglen = 1000; /* trajectory segment length */
+double alf0 = 1.0, alfc = 100.0;
 int boundary = 1; /* how to handle boundary conditions,
-    0: smooth (requires proper `derm' and `derp' values
-    1: reflective or hard (do not allow outward flows) */
-double alf0 = 2.0, alfc = 100.0;
-double mindata = 100.0, derm = 0.2, derp = 0.5;
+    0: smooth (requires proper `derm' and `derp' values)
+    1: reflective or hard (no out-of-boundary-transitions) */
+double mindata = 100.0; /* minimal number of data points to use the correction */
+double derm = 0.2, derp = 0.5; /* limiting magnitude for smooth boundaries 
+                                  larger for tighter boundaries */
 double mf0 = 0; /* initial mean force */
 double mfmax = 100.0; /* maximal mean force magnitude */
 
@@ -65,7 +68,10 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-d", "%r",  &mddt,      "MD time step size");
   argopt_add(ao, "-q", "%r",  &thermdt,   "time step for mc-vrescaling thermostat");
   argopt_add(ao, "-c", "%r",  &rcc,       "cutoff distance for defining contacts");
-  argopt_add(ao, "-m", "%d",  &hmcmethod, "hybrid MC method, 0: random, 1: random matrix, 2: random rotation, 4: random reflection");
+
+  argopt_add(ao, "-m", "%d",  &hmcmethod, "hybrid MC method, 0: random, 1: random unitary matrix, "
+      "2: random rotation, 4: random reflection");
+  argopt_add(ao, "-r", "%lf", &hmcmutr,   "probability of mutating velocities");
 
   /* algorithm-E parameters */
   argopt_add(ao, "-l", "%d",  &seglen,    "segment length");
@@ -127,7 +133,7 @@ static void run(void)
   hist_t *hsep, *hsrmsd, *hscont;
 
   alged_t *al;
-  double alf, dv, duc;
+  double alf, dv, corr;
   /* the actual, logical and boundary-adjusted acceptance rates */
   int acc = 0, acc_l = 0, acc_a = 0;
   double mf = 0; /* current mean force */
@@ -153,9 +159,8 @@ static void run(void)
       go->epot, go->epotref, go->rmsd);
 
   /* open the alge object */
-  al = alged_open(rmsdmin, rmsdmax, rmsddel, alf0, alfc, mf0,
-    0 /* zeroth order mean force extrapolation */,
-    1 /* aiming at a flat histogram */, mindata, derm, derp);
+  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0,
+    0 /* zeroth order mean force extrapolation */);
 
   if (hmcmethod == 0) { /* random velocities */
     go->dof = 3 * go->n;
@@ -208,7 +213,7 @@ static void run(void)
 
     /* we mutate the velocities even if the trajectory is continued */
     if (hmcmethod == 0) {
-      md_mutv3d(go->v, go->n, tp);
+      md_mutv3d(go->v, go->n, tp, hmcmutr);
     } else if (hmcmethod == 1) {
       md_unimatv3d(go->v, go->n);
     } else {
@@ -217,7 +222,8 @@ static void run(void)
     }
 
     /* update alge data */
-    mf = alged_update(al, rmsd0bk, drmsd_l, boundary, mfmax, &alf, &duc);
+    mf = alged_update(al, rmsd0bk, drmsd_l, alf0, alfc, mindata,
+        boundary, derm, derp, mfmax, &alf, &corr);
 
     /* set the new start point */
     go->rmsd = rmsd0;
@@ -229,7 +235,7 @@ static void run(void)
 
     if (it % nevery == 0) {
       printf("t %g, T %.3f(%.3f), ep %.2f/%.2f, rmsd %.2f/%.2f, Q %d/%d=%.2f(%.2f), "
-          "alf %.6f, mf %.3f, nc %.2f%+.2f(%+.2f, dv %.3f), segacc %2.0f%%\n",
+          "alf %.6f, mf %.3f, rmsd %.2f%+.2f(%+.2f, dv %.3f), segacc %2.0f%%\n",
         t, go->tkin, tp,
         go->epot, hs_getave(hsep, 0, NULL, NULL),
         go->rmsd, hs_getave(hsrmsd, 0, NULL, NULL),

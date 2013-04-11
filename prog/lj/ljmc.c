@@ -18,40 +18,42 @@ int nevery  = 100000;  /* print message every this number of steps */
 int nreport = 10000000; /* save data every the number of steps */
 
 real mcamp = 0.2f;
-double mindata = 1000.f;
-
-/* boundary limiting strength, larger causes better confinement */
-double derm = 1, derp = 2;
 
 /* algorithm E stuff */
-int seglen = 10; /* segment length for a perturbation */
 double epmin = -550, epmax = -350, epdel = 5;
-int flathis = 1;
-int forder = 0;
-double alfmax = 0.001, alfc = 0.3;
+int seglen = 10; /* segment length for a perturbation */
+double alf0 = 0.01, alfc = 1.0;
+int boundary = 1; /* 0: smooth boundary, 1: reflective */
+double mindata = 1000.; /* minimal number of data points to use the corrections */
+double derm = 1, derp = 2; /* limiting magnitude for smooth boundaries 
+                                  larger for tighter boundaries */
+double mfmax = 100.0; /* maximal magnitude of tp0/tp */
 
 char *fnout = "lj.e";
-char *fnhis = "epot.his";
+char *fnhis = "ep.his";
 
 /* handle input arguments */
 static void doargs(int argc, char **argv)
 {
   argopt_t *ao = argopt_open(0);
-  argopt_add(ao, "-n", "%d", &N,      "number of particles");
-  argopt_add(ao, "-T", "%r", &tp0,    "temperature");
-  argopt_add(ao, "-r", "%r", &rho,    "density");
-  argopt_add(ao, "-c", "%r", &rcdef,  "cutoff distance");
-  argopt_add(ao, "-0", "%d", &nequil, "number of equilibration steps");
-  argopt_add(ao, "-1", "%d", &nsteps, "number of simulation steps");
-  argopt_add(ao, "-l", "%d", &seglen, "the number of steps to be treated as a perturbation");
-  argopt_add(ao, "-a", "%r", &mcamp,  "Monte Carlo move size");
-  argopt_add(ao, "-q", "%lf", &mindata, "minimal number of data points");
-  argopt_add(ao, "--a0", "%lf", &alfmax, "initial updating magnitude");
-  argopt_add(ao, "--ac", "%lf", &alfc, "updating magnitude");
-  argopt_add(ao, "--km", "%lf", &derm, "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp, "correction for x > xmax");  
-  argopt_add(ao, "-o", NULL, &fnout,  "output file");
-  argopt_add(ao, "-H", NULL, &fnhis,  "histogram file");
+  argopt_add(ao, "-n", "%d",  &N,         "number of particles");
+  argopt_add(ao, "-T", "%r",  &tp0,       "temperature");
+  argopt_add(ao, "-r", "%r",  &rho,       "density");
+  argopt_add(ao, "-c", "%r",  &rcdef,     "cutoff distance");
+  argopt_add(ao, "-0", "%d",  &nequil,    "number of equilibration steps");
+  argopt_add(ao, "-1", "%d",  &nsteps,    "number of simulation steps");
+
+  argopt_add(ao, "-l", "%d",  &seglen,    "the number of steps to be treated as a perturbation");
+  argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
+
+  argopt_add(ao, "-a", "%r",  &mcamp,     "Monte Carlo move size");
+  argopt_add(ao, "-q", "%lf", &mindata,   "minimal number of data points");
+  argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
+  argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
+  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
+  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");  
+  argopt_add(ao, "-o", NULL, &fnout,      "output file");
+  argopt_add(ao, "-H", NULL, &fnhis,      "histogram file");
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
   argopt_add(ao, "--report",  "%d", &nreport, "interval of saving data");
   argopt_addhelp(ao, "-h");
@@ -70,9 +72,8 @@ static void domc(lj_t *lj)
   double k, u0 = 0, u1 = 0, du = 0, duc = 0, alf = 0;
   double macc = 0, mtot = 1e-6;
 
-  al = alged_open(epmin, epmax, epdel, alfmax, alfc,
-    1.0/tp0, forder, flathis, mindata, derm, derp);
-  hs = hs_open(1, -800, 0, 1.0);
+  al = alged_open(epmin, epmax, epdel, 0.0, 0);
+  hs = hs_open1(-800, 0, 1.0);
 
   /* try to equilibrate the system by running MD at tp0 */
   for (t = 1; t <= nequil; t++)
@@ -82,37 +83,29 @@ static void domc(lj_t *lj)
   printf("equilibrated at t %d, epot %g\n", t, lj->epot);
 
   u0 = lj->epot;
-  ie = alged_getidx(al, u0);
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
-    k = alged_getf(al, lj->epot);
+    k = alged_getf(al, lj->epot) + 1/tp0;
+    if (boundary == 1 && (lj->epot < epmin || lj->epot > epmax))
+      k = 1.;
+    k = dblmax(k, 0.05/tp0); /* the minimal scaling */
 
     mtot += 1;
     macc += lj_metro(lj, mcamp, k/tp0);
-    hs_add1ez(hs, lj->epot, HIST_VERBOSE);
+    hs_add1ez(hs, lj->epot, 0);
 
     if (t % seglen == 0) {
       u1 = lj->epot;
       du = u1 - u0;
-
-      al->cc[ie] += 1.0;
-      al->e2[ie] += du * du;
-      alf = alged_getalpha(al, ie);
-
-      /* correction term */
-      du += duc = alged_getcorr1(al, ie);
-
-      al->f[ie] = dblmax(al->f[ie] + alf * du, 0.001);
-
-      /* set the new start point */
+      alged_update(al, u0, du, alf0, alfc, mindata,
+          boundary, derm, derp, mfmax, &alf, &duc);
       u0 = u1;
-      ie = alged_getidx(al, u0);
     }
 
     if (t % nevery == 0) {
-      printf("t %d, ep %g, du %g, %g, k %g, ie %d, alf %g, ek %g, acc %g\n",
-        t, lj->epot/lj->n, du, duc, k, ie, alf, lj->ekin, macc/mtot);
+      printf("t %g, ep %.2f, du %.3f, %.3f, k %g, alf %g, acc %2.0f%%\n",
+        1.*t, lj->epot, du, duc, k, alf, 100*macc/mtot);
 
       if (t % nreport == 0) {
         alged_save(al, fnout);
