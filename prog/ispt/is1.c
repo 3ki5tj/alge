@@ -15,9 +15,9 @@
 #include "alge.h"
 
 int epmin = -1920, epmax = 0, epdel = 16;
-double nsweeps = 1e5, nsteps;
+double nsweeps = 1e6, nsteps;
 /* alf0 must be small enough */
-double alf0 = 5e-4, alfc = 0.5, beta0 = 0.4;
+double alf0 = 1e-3, alfc = 5.0, beta0 = 0.4;
 int nevery  = 1000000;
 int nreport = 100000000;
 double mindata = 1000.0;
@@ -57,7 +57,7 @@ static void doargs(int argc, char **argv)
 }
 
 /* configuration move under modified Hamiltonian, return de */
-static int move(ising_t *is, const alge_t *al)
+static int move(ising_t *is, const alge_t *al, int stack[], int *nstack)
 {
   int id, de, h, acc;
 
@@ -68,9 +68,25 @@ static int move(ising_t *is, const alge_t *al)
       NULL, &de, NULL, NULL);
   } else acc = 1;
 
-  if (acc) { IS2_FLIP(is, id, h); }
+  if (acc) {
+    IS2_FLIP(is, id, h);
+    stack[ (*nstack)++ ] = id;
+  }
   return de;
 }
+
+
+static void undo(ising_t *is, int stack[], int nstack)
+{
+  int i, id, h;
+
+  for (i = nstack - 1; i >= 0; i--) {
+    id = stack[i];
+    IS2_GETH(is, id, h);
+    IS2_FLIP(is, id, h);
+  }
+}
+
 
 /* compute the reference beta */
 static void getrefbet(double *refbet, const double *logdos)
@@ -112,14 +128,14 @@ static void getrefbet(double *refbet, const double *logdos)
   free(arr);
 }
 
-/* save histogram */
+/* save histogram and integrate a finer density of states */
 static int saveall(const alge_t *al, const double *logdos, double *verr,
-  const double *his, const double *acc, const double *inc, const char *fn)
+  const double *his, const char *fn)
 {
   int i, n = ECNT, ene, ie = 0;
   FILE *fp;
   double tot, fac, x;
-  double *bet, *lng, *lngadj, *refbet;
+  double *bet, *lng, *refbet;
 
   /* compute the normalization factor of the histogram */
   for (tot = 0., i = 0; i < n; i++)
@@ -132,7 +148,6 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
 
   xnew(bet, n + 2);
   xnew(lng, n + 2);
-  xnew(lngadj, n + 2);
   xnew(refbet, n + 2);
 
   /* compute bet from the reference dos */
@@ -156,18 +171,8 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
   x = lng[i] - logdos[i];
   for (i = 0; i <= n; i++) lng[i] -= x;
 
-  /* construct the adjusted density of states */
-  for (ene = al->xmin; ene <= al->xmax; ene += EDEL) {
-    i = (ene - EMIN)/EDEL;
-    lngadj[i] = lng[i] + log(his[i]);
-  }
-  /* shift the density of states */
-  i = (al->xmin - EMIN)/EDEL;
-  x = lngadj[i] - logdos[i];
-  for (i = 0; i <= n; i++) lngadj[i] -= x;
-
   /* compute the average and maximal absolute and relative error */
-  for (i = 0; i < 8; i++) verr[i] = 0.;
+  for (i = 0; i < 4; i++) verr[i] = 0.;
   for (i = 0, ene = al->xmin; ene < al->xmax; ene += EDEL) {
     ie = (ene - EMIN)/EDEL;
     x = fabs(lng[ie] - logdos[ie]);
@@ -177,34 +182,25 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
     verr[2] += x;
     if (x > verr[3]) verr[3] = x;
 
-    x = fabs(lngadj[ie] - logdos[ie]);
-    verr[4] += x;
-    if (x > verr[5]) verr[5] = x;
-    x /= logdos[ie];
-    verr[6] += x;
-    if (x > verr[7]) verr[7] = x;
     i++;
   }
   verr[0] /= i;
   verr[2] /= i;
-  verr[4] /= i;
-  verr[6] /= i;
 
   xfopen(fp, fn, "w", return -1);
   fprintf(fp, "# %d %d %d 1 | %g\n",
     al->n, al->xmin, al->dx, tot);
   for (i = 0; i < ECNT; i++) {
     if (his[i] < 0.5)  continue;
-    fprintf(fp, "%d %g %g %g %.6f %.6f %.6f %.6f %.6f\n",
-      EMIN + i * EDEL, his[i]*fac, acc[i]*fac, inc[i]*fac,
-      bet[i], lng[i], lngadj[i], refbet[i], logdos[i]);
+    fprintf(fp, "%d %g %.6f %.6f %.6f %.6f\n",
+      EMIN + i * EDEL, his[i]*fac,
+      bet[i], lng[i], refbet[i], logdos[i]);
   }
   fclose(fp);
 
   free(refbet);
   free(bet);
   free(lng);
-  free(lngadj);
   return 0;
 }
 
@@ -212,8 +208,11 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
 static int run(ising_t *is, double trun)
 {
   alge_t *al;
-  double t, *ehis, *eacc, *einc, tote2 = 0., verr[8], duc;
-  int it = 0, ie, de, u0 = 0, u1, du = 0;
+  double t, *ehis, verr[8], ave2 = 0, alf = 0;
+  int it = 0, u0 = 0, u1, du = 0;
+  int *stack, nstack = 0;
+
+  xnew(stack, seglen);
 
   al = alge_open(epmin, epmax, epdel, beta0);
   /* equilibrate the system till is->E > epmin */
@@ -225,44 +224,42 @@ static int run(ising_t *is, double trun)
   printf("equilibration finished in %d steps\n", it);
 
   xnew(ehis, ECNT);
-  xnew(eacc, ECNT);
-  xnew(einc, ECNT);
 
   u0 = is->E;
 
   for (t = 1; t <= trun; t++) {
-    ie = (is->E - EMIN)/EDEL;
-    ehis[ie] += 1;
-    de = move(is, al);
-    if (de != 0) {
-      eacc[ie] += 1;
-      einc[ie] += de*de;
-    }
+    ehis[ (is->E - EMIN)/EDEL ] += 1;
+    move(is, al, stack, &nstack);
 
     if (++it % seglen == 0) {
       u1 = is->E;
       du = u1 - u0;
-      alge_update(al, u0, du, alf0, alfc, mindata, boundary,
-          derm, derp, -dermax, NULL, &duc);
+      assert(u0 >= epmin && u0 < epmax);
+      alge_fupdate(al, u0, du, alf0, alfc, 
+          10.0, -dermax, dermax, &alf, &ave2);
+      if (u1 < epmin || u1 >= epmax) { /* undo out-of-boudary segments */
+        undo(is, stack, nstack);
+        u1 = is->E;
+      }
       u0 = u1; /* set the new start point */
+      nstack = 0; /* clear the stack */
 
       if (it % nevery == 0) {
-        printf("t %g, ep %d, du %d, %g\n", t, is->E, du, duc);
-        if (it % nreport == 0) {
-          saveall(al, is->logdos, verr, ehis, eacc, einc, fnhis);
-          alge_save(al, fnout);
-          it = 0; /* reset the integer counter */
-        }
+        printf("t %g, ep %d, du %d, e2 %g, alf %g\n", t, is->E, du, ave2, alf);
+      }
+
+      if (it % nreport == 0 || t >= nsteps - .1) {
+        saveall(al, is->logdos, verr, ehis, fnhis);
+        printf("trun %g, eabsave %g, eabsmax %g, erelave %g, erelmax %g\n",
+          trun, verr[0], verr[1], verr[2], verr[3]);        
+        alge_save(al, fnout);
+        it = 0; /* reset the integer counter */
       }
     }
   }
-  saveall(al, is->logdos, verr, ehis, eacc, einc, fnhis);
-  printf("trun %g, e2 %g, eabsave0 %g, eabsmax0 %g, erelave0 %g, erelmax0 %g, eabsave1 %g, eabsmax1 %g, erelave1 %g, erelmax1 %g\n",
-    trun, tote2/trun, verr[0], verr[1], verr[2], verr[3],
-    verr[4], verr[5], verr[6], verr[7]);
-  alge_save(al, fnout);
   alge_close(al);
-  free(ehis); free(eacc); free(einc);
+  free(ehis);
+  free(stack);
   return 0;
 }
 

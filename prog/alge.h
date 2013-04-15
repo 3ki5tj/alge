@@ -156,8 +156,7 @@ INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
     double delmax, double mfmin, double mfmax,
     double *alpha, double *denom)
 {
-  double alf, dxc, den;
-  double dxmax = dblmax(fabs(dx_l), al->dx);
+  double alf, den;
   int id = alge_getidx(al, x0), idn = alge_getidx(al, x0 + dx_l);
 
   /* in reflective boundary, x0 shouldn't be out of boundary

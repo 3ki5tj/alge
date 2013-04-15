@@ -57,7 +57,7 @@ static void doargs(int argc, char **argv)
 }
 
 /* entropic sampling */
-static int move(potts_t *pt, alge_t *al)
+static int move(potts_t *pt, alge_t *al, int stack[][2], int *nstack)
 {
   int id, so, sn, de = 0, nb[PT2_Q], acc;
 
@@ -65,21 +65,42 @@ static int move(potts_t *pt, alge_t *al)
   PT2_NEWFACE(pt, id, so, sn); /* so --> sn */
   de = nb[so] - nb[sn];
   if (de != 0) {
-    acc = alge_getacc(al, pt->E + de, pt->E, boundary,
+    /* we always use smooth boundary condition within a segment */
+    acc = alge_getacc(al, pt->E + de, pt->E, 0,
       NULL, &de, NULL, NULL);
   } else acc = 1;
 
-  if (acc) { PT2_FLIP(pt, id, so, sn, nb); }
+  if (acc) { 
+    PT2_FLIP(pt, id, so, sn, nb);
+    stack[ *nstack ][0] = id;
+    stack[ *nstack ][1] = so;
+    (*nstack)++;
+  }
   return de;
 }
 
-/* save all data */
-static int saveall(alge_t *al, double *his, double *acc, double *inc, const char *fn)
+
+/* undo all moves in a segment */
+static void undo(potts_t *pt, int stack[][2], int nstack)
+{
+  int i, id, so, sn, nb[PT2_Q];
+
+  for (i = nstack - 1; i >= 0; i--) {
+    id = stack[i][0];
+    sn = pt->s[id];
+    so = stack[i][1];
+    PT2_GETH(pt, id, nb);
+    PT2_FLIP(pt, id, sn, so, nb); /* sn --> so */
+  }
+}
+
+/* save histogram and integrate a finer density of states */
+static int saveall(alge_t *al, double *his, const char *fn)
 {
   int i, n = ECNT, ie, ene;
   FILE *fp;
   double tot, fac, x;
-  double *bet, *lng, *lngadj;
+  double *bet, *lng;
 
   for (tot = 0., i = 0; i < ECNT; i++)
     tot += his[i];
@@ -91,7 +112,6 @@ static int saveall(alge_t *al, double *his, double *acc, double *inc, const char
 
   xnew(bet, n + 2);
   xnew(lng, n + 2);
-  xnew(lngadj, n + 2);
 
   /* compute a detailed beta and density of states */
   for (lng[0] = 0, i = 0; i <= n; i++) {
@@ -111,41 +131,32 @@ static int saveall(alge_t *al, double *his, double *acc, double *inc, const char
   x = lng[i];
   for (i = 0; i <= n; i++) lng[i] -= x;
 
-  /* construct the adjusted density of states */
-  for (ene = al->xmin; ene <= al->xmax; ene += EDEL) {
-    i = (ene - EMIN)/EDEL;
-    lngadj[i] = lng[i] + log(his[i]);
-  }
-  /* shift the density of states */
-  i = (al->xmin - EMIN)/EDEL;
-  x = lngadj[i];
-  for (i = 0; i <= n; i++) lngadj[i] -= x;
-
   xfopen(fp, fn, "w", return -1);
   fprintf(fp, "# %d %d %d 1 | %g\n",
     al->n, al->xmin, al->dx, tot);
   for (i = 0; i < ECNT; i++) {
     if (his[i] < 0.5)  continue;
-    fprintf(fp, "%d %g %g %g %.6f %.6f %.6f\n",
-      EMIN + i * EDEL, his[i]*fac, acc[i]*fac, inc[i]*fac,
-      bet[i], lng[i], lngadj[i]);
+    fprintf(fp, "%d %g %.6f %.6f\n",
+      EMIN + i * EDEL, his[i]*fac, 
+      bet[i], lng[i]);
   }
   fclose(fp);
 
   free(bet);
   free(lng);
-  free(lngadj);
   return 0;
 }
-
-
+ 
 /* entropic sampling */
 static void run(void)
 {
   potts_t *pt = pt2_open(L, PT2_Q);
   alge_t *al;
-  double *ehis, *eacc, *einc, t, ave2 = 0, alf = 0, duc = 0;
-  int ie, de, it = 0, u1, u0, du;
+  double *ehis, t, ave2 = 0, alf = 0;
+  int it = 0, u1, u0, du;
+  int (*stack)[2], nstack = 0;
+
+  xnew(stack, seglen);
 
   al = alge_open(epmin, epmax, epdel, beta0);
   /* equilibrate the system till pt->E > epmin */
@@ -158,42 +169,41 @@ static void run(void)
   printf("equilibration finished, E %d\n", pt->E);
 
   xnew(ehis, ECNT);
-  xnew(eacc, ECNT);
-  xnew(einc, ECNT);
-
+  
   u0 = pt->E;
 
   for (t = 1; t <= nsteps; t++) {
-    ie = (pt->E - EMIN)/EDEL;
-    ehis[ie] += 1;
-    de = move(pt, al);
-    if (de != 0) {
-      eacc[ie] += 1;
-      einc[ie] += de*de;
-    }
+    ehis[ (pt->E - EMIN)/EDEL ] += 1;
+    move(pt, al, stack, &nstack);
 
     if (++it % seglen == 0) {
       u1 = pt->E;
       du = u1 - u0;
-      //alge_update(al, u0, du, alf0, alfc, mindata, boundary,
-      //    derm, derp, -dermax, NULL, &duc);
+      assert(u0 >= epmin && u0 < epmax);
       alge_fupdate(al, u0, du, alf0, alfc, 
-          10.0, -dermax, dermax, &alf, &ave2);
+            10.0, -dermax, dermax, &alf, &ave2);
+      if (u1 < epmin || u1 >= epmax) { /* undo out-of-boudary segments */
+        undo(pt, stack, nstack);
+        u1 = pt->E;
+      }
       u0 = u1; /* set the new start point */
+      nstack = 0; /* clear the stack */
 
       if (it % nevery == 0) {
         printf("t %g, ep %d, du %d, e2 %g, alf %g\n", t, pt->E, du, ave2, alf);
-        if (it % nreport == 0) {
-          saveall(al, ehis, eacc, einc, fnhis);
-          alge_save(al, fnout);
-          it = 0; /* reset the integer counter */
-        }
+      }
+
+      if (it % nreport == 0 || t >= nsteps - .1) {
+        saveall(al, ehis, fnhis);
+        alge_save(al, fnout);
+        it = 0; /* reset the integer counter */
       }
     }
   }
   alge_close(al);
-  free(ehis); free(eacc); free(einc);
   pt2_close(pt);
+  free(ehis);
+  free(stack);
 }
 
 int main(int argc, char **argv)
