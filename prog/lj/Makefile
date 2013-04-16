@@ -1,17 +1,15 @@
 
 # optimized compiling
-#CC=gcc -O3 -Wall -Wunused -march=native
-#LM=-lm
-CC=icc -O3 -Wall -Wunused -march=native
-LM=
+CC=gcc -O3 -Wall -Wunused -march=native
+LM=-lm
+#CC=icc -O3 -Wall -Wunused -march=native
+#LM=
 
 APP=ljmd ljmc
 
 all: $(APP)
 
-$(APP): Makefile zcom.h alged.h
-
-%:: %.c
+$(APP): % : %.c Makefile zcom.h alged.h
 	$(CC) -o $@ $< $(LM)
 
 clean:

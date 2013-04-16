@@ -21,7 +21,7 @@ typedef struct {
  *
  * (hybrid) MC:
  *  alged_getacc()  get acceptance rate for a move
- *  alged_update()  update mean force
+ *  alged_fupdate()  update mean force
  *
  * low level MD/MC:
  *  alged_getf()    get mean force, for MD
@@ -114,81 +114,36 @@ INLINE double alged_getalpha(const alged_t *al, int i, double a0, double ac)
 }
 
 
-/* return the correction: (-1/2) d < dx^2 > / dx
- * the updating seeks the fixed point:
- *    < dx + corr. > = 0
- * where
- *    corr. =  - (1/2) d < dx^2 > / dx
- * the mean force f = d (log rho) / dx is updated as
- *   f += alpha (dx + corr.)
- *
- * the formula is derived from the detail balance
- *   rho(x) p(x, eps) = rho(x + eps) p(x + eps, -eps)
- * if rho(x) == rho(x + eps), then
- *   \int p(x, eps) eps = \int p(x, -eps) eps + \int dp/dx eps^2
- * which is < eps > = -<eps> + d < eps^2 > / dx
- *
- * `mindata' is the minimal number of data points to use the corrections
- *  since the correction uses numerical differentiation, insufficient
- *  data points makes the correction unreliable
- *
- * the smooth boundary condition is effected by the two parameters
- * `derm' and `derp', which are the absolute values of the offsets
- * to the mean force that discourage moves reaching out of (xmin, xmax)
- * */
-INLINE double alged_getcorr(const alged_t *al, int i,
-    double mindata, int refl, double derm, double derp)
+/* return the average < e^2 > at bin `i0' and `i1' */
+INLINE double alged_getden(const alged_t *al, int i0, int i1)
 {
-  int im = i - 1, ip = i + 1;
-  double e2o, e2n, dx = 2 * al->dx;
-
-  /* the correction is adjusted by the boundary conditions
-   * for a reflective boundary, we simply set it to be zero
-   * for a smooth boundary, we try to use `derm' and `derp',
-   * which are to be gauged carefully by experimenting,
-   * to the make the distribution continuous */
-  if (im < 0) {
-    /* an artifically negative `f' makes more negative
-      * which encourages a positive `dx' to get back in range */
-    if (!refl) return -derm; /* else return 0; */
-    /* for a reflective boundary, it's okay to return 0 */
-    im = 0; ip = 1; dx = al->dx;
-  } else if (ip >= al->n) {
-    if (!refl) return derp; /* else return 0; */
-    im = al->n - 2; ip = al->n - 1; dx = al->dx;
-  }
-
-  if (al->cc[im] < mindata || al->cc[ip] < mindata)
-    return 0; /* set the correction to zero if too few data points */
-  e2o = al->e2[im]/al->cc[im];
-  e2n = al->e2[ip]/al->cc[ip];
-  return -0.5f * (e2n - e2o) / dx;
+  double cc = al->cc[i0] + al->cc[i1];
+  double e2 = al->e2[i0] + al->e2[i1];
+  /* (e20 + e21) / (cc0 + cc1) is roughly < e2 >_x of `x' in the middle
+   * even if the distribution is slightly tilded, the shift in `x'
+   * for positive and negative `eps' should still sum to the full `eps'
+   * returns unity by default */
+  return (cc > 0 && e2 > 0) ? (e2 / cc) : 1.0;
 }
 
 
-/* update data and mean force
+/* fractional update data and mean force, with the denominator < e^2 >
  * `x0' is the start point, `dx_l' is the logical change of `x'
  * the mean force updating amplitude is min{`a0', `ac'/cc}
- * `mindata' is the minimal number of data points to apply
- *    the correction, see _getcorr()
- * `refl' mean if the boundary condition is reflective
- *    if `refl' == 0, `derm' and `derp' are used for the corrections
- *    at the boundaries, otherwise the two are unused
- * `mfmax' is the maximal allowed mean force amplitude
  * `*alpha' is the updating amplitude
- * `*corr' is the O(1/N) mean-force correction */
-INLINE double alged_update(alged_t *al, double x0, double dx_l,
-    double a0, double ac,
-    double mindata, int refl, double derm, double derp,
-    double mfmax, double *alpha, double *corr)
+ * `delmax' is maximal amount of the allowed 2 e / < e^2 >
+ * `*denom' is the used < e^2 >
+ * (`mfmin', `mfmax') is the allowed mean force range */
+INLINE double alged_fupdate(alged_t *al, double x0, double dx_l,
+    double a0, double ac, double *alpha, double delmax, 
+    double *denom, double mfmin, double mfmax)
 {
-  double alf, dxc;
-  double dxmax = dblmax(fabs(dx_l), al->dx);
-  int id = alged_getidx(al, x0);
+  double alf, den;
+  int id = alged_getidx(al, x0), idn = alged_getidx(al, x0 + dx_l);
 
   /* in reflective boundary, x0 shouldn't be out of boundary
    * we don't let this to pollute the data */
-  if (refl && (x0 < al->xmin || x0 > al->xmax)) return 0;
+  if (x0 < al->xmin || x0 >= al->xmax) return 0;
 
   /* update data */
   al->cc[id] += 1;
@@ -198,14 +153,12 @@ INLINE double alged_update(alged_t *al, double x0, double dx_l,
   alf = alged_getalpha(al, id, a0, ac);
   if (alpha) *alpha = alf;
 
-  /* compute the O(1/N) correction */
-  dxc = alged_getcorr(al, id, mindata, refl, derm, derp);
-  dxc = dblconfine(dxc, -dxmax, dxmax);
-  if (corr) *corr = dxc;
+  /* compute the denominator < e^2 > */
+  den = alged_getden(al, id, idn);
+  if (denom) *denom = den;
 
-  al->f[id] += alf * (dx_l + dxc);
-  if (mfmax > 0) return al->f[id] = dblconfine(al->f[id], -mfmax, mfmax);
-  else return al->f[id] = dblmax(al->f[id], 0);
+  al->f[id] += alf * dblconfine(2.0*dx_l/den, -delmax, delmax);
+  return al->f[id] = dblconfine(al->f[id], mfmin, mfmax);
 }
 
 

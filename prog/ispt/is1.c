@@ -20,13 +20,12 @@ double nsweeps = 1e6, nsteps;
 double alf0 = 1e-3, alfc = 5.0, beta0 = 0.4;
 int nevery  = 1000000;
 int nreport = 100000000;
-double mindata = 1000.0;
 char *fnhis = "ep.his";
 char *fnout = "is.e";
 int seglen = 10;
 int boundary = 0; /* 0: smooth; 1: reflective */
-double derm = 0.4f, derp = 0.1f;
-double dermax = 100.f;
+double delmax = 10.f;
+double betmax = 100.f;
 
 /* handle input arguments */
 static void doargs(int argc, char **argv)
@@ -38,13 +37,10 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-)", "%d",  &epmax,     "maximal energy");
   argopt_add(ao, "-:", "%d",  &epdel,     "energy interval");
   argopt_add(ao, "-l", "%d",  &seglen,    "the number of steps to be treated as a perturbation");
-  argopt_add(ao, "-q", "%lf", &mindata,   "minimal number of data points");
-  argopt_add(ao, "-K", "%lf", &dermax,    "maximal temperature");
+  argopt_add(ao, "-K", "%lf", &betmax,    "maximal temperature");
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective");
   argopt_add(ao, "--a0", "%lf", &alf0,    "maximal amplitude");
   argopt_add(ao, "--ac", "%lf", &alfc,    "alpha_c");
-  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");
   argopt_add(ao, "-o",    NULL, &fnout,   "name of the output file");
   argopt_add(ao, "-H",    NULL, &fnhis,   "name of the histogram file");
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
@@ -235,8 +231,8 @@ static int run(ising_t *is, double trun)
       u1 = is->E;
       du = u1 - u0;
       assert(u0 >= epmin && u0 < epmax);
-      alge_fupdate(al, u0, du, alf0, alfc, 
-          10.0, -dermax, dermax, &alf, &ave2);
+      alge_fupdate(al, u0, du, alf0, alfc, &alf,
+          delmax, &ave2, 0, betmax);
       if (u1 < epmin || u1 >= epmax) { /* undo out-of-boudary segments */
         undo(is, stack, nstack);
         u1 = is->E;

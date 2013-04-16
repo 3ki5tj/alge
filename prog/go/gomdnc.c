@@ -48,14 +48,12 @@ double Qdel = 0.05;
 int contmin, contmax, contdel; /* to be determined */
 
 int seglen = 200; /* trajectory segment length */
-double alf0 = 0.001, alfc = 0.5;
+double alf0 = 0.01, alfc = 1.0;
 int boundary = 1; /* how to handle boundary conditions,
     0: smooth (requires proper `derm' and `derp' values)
     1: reflective or hard (no out-of-boundary-transitions) */
-double mindata = 100.0; /* minimal number of data points to use the correction */
-double derm = 0.2, derp = 0.5; /* limiting magnitude for smooth boundaries 
-                                  larger for tighter boundaries */
 double mf0 = 0; /* initial mean force */
+double delmax = 10.0; /* maximal 2 e / < e^2 > */ 
 double mfmax = 1.0; /* maximal mean force magnitude */
 
 /* handle command-line arguments */
@@ -77,11 +75,8 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-l", "%d",  &seglen,    "segment length");
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
   argopt_add(ao, "-F", "%lf", &mf0,       "initial mean force");
-  argopt_add(ao, "-9", "%lf", &mindata,   "minimal number of data points to apply correction");
   argopt_add(ao, "--a0",  "%lf", &alf0,   "initial updating magnitude");
   argopt_add(ao, "--ac",  "%lf", &alfc,   "updating magnitude");
-  argopt_add(ao, "--km",  "%lf", &derm,   "correction for x < xmin");
-  argopt_add(ao, "--kp",  "%lf", &derp,   "correction for x > xmax");
   argopt_add(ao, "--Q0",  "%lf", &Qmin,   "minimal contact fraction");
   argopt_add(ao, "--Q1",  "%lf", &Qmax,   "maximal contact fraction");
   argopt_add(ao, "--dQ",  "%lf", &Qdel,   "contact fraction interval");
@@ -103,7 +98,7 @@ static void run(void)
   hist_t *hsep, *hsrmsd, *hscont;
 
   alged_t *al;
-  double alf, dv, duc;
+  double alf, dv, ave2;
   /* the actual, logical and boundary-adjusted acceptance rates */
   int acc = 0, acc_l = 0, acc_a = 0;
   double mf = 0; /* current mean force */
@@ -188,8 +183,8 @@ static void run(void)
     }
 
     /* update alge data */
-    mf = alged_update(al, nc0bk, dnc_l, alf0, alfc,
-        mindata, boundary, derm, derp, mfmax, &alf, &duc);
+    mf = alged_fupdate(al, nc0bk, dnc_l, alf0, alfc, &alf,
+        delmax, &ave2, -mfmax, mfmax);
 
     /* set the new start point */
     nc = nc0;
@@ -201,13 +196,13 @@ static void run(void)
 
     if (it % nevery == 0) {
       printf("t %g, T %.3f(%.3f), ep %.2f/%.2f, rmsd %.2f/%.2f, Q %d/%d=%.2f(%.2f), "
-          "alf %.6f, mf %.3f, nc %d%+.0f(%+d, dv %.3f), segacc %2.0f\n",
+          "alf %.6f, mf %.3f, nc %d%+.0f(%+d, dv %.3f, <e^2> %g), segacc %2.0f\n",
         t, go->tkin, tp,
         go->epot, hs_getave(hsep, 0, NULL, NULL),
         go->rmsd, hs_getave(hsrmsd, 0, NULL, NULL),
         nc, go->ncont, 1.0*nc/go->ncont,
         hs_getave(hscont, 0, NULL, NULL)/go->ncont,
-        alf, mf, nc0bk, dnc_l, dnc_a, dv, 100.*segacc/segtot);
+        alf, mf, nc0bk, dnc_l, dnc_a, dv, ave2, 100.*segacc/segtot);
     }
 
     if (it % nreport == 0 || t >= nsteps - 0.1) {

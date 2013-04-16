@@ -22,11 +22,9 @@ int nreport = 100000; /* save data every this number of steps */
 /* algorithm E stuff */
 double epmin = -500, epmax = -300, epdel = 5;
 int seglen = 5; /* segment length for a perturbation */
-double alf0 = 0.01, alfc = 1.0; 
+double alf0 = 0.1, alfc = 1.0; 
 int boundary = 1; /* 0: smooth boundary, 1: reflective */
-double mindata = 1000.; /* minimal number of data points to use the corrections */
-double derm = 1, derp = 2; /* limiting magnitude for smooth boundaries 
-                                  larger for tighter boundaries */
+double delmax = 10.0;
 double mfmax = 100.0; /* maximal magnitude of tp0/tp */
 
 char *fnout = "lj.e";
@@ -49,11 +47,8 @@ static void doargs(int argc, char **argv)
 
   argopt_add(ao, "-d", "%r",  &mddt,      "time step for molecular dynamics");
   argopt_add(ao, "-q", "%r",  &thermdt,   "thermostat time step");
-  argopt_add(ao, "-9", "%lf", &mindata,   "minimal number of data points");
   argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
   argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
-  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");
   argopt_add(ao, "-o", NULL, &fnout,      "output file");
   argopt_add(ao, "-H", NULL, &fnhis,      "histogram file");  
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
@@ -71,9 +66,9 @@ static void domd(lj_t *lj)
   int t;
   alged_t *al;
   hist_t *hs;
-  double k, u0, u1, du = 0, duc = 0, alf = 0;
+  double k, u0, u1, du = 0, alf = 0, ave2 = 0;
 
-  al = alged_open(epmin, epmax, epdel, 0., 
+  al = alged_open(epmin, epmax, epdel, 1/tp0, 
       0 /* zeroth order mean force extrapolation */);
   hs = hs_open1(-800, 0, 1.0);
 
@@ -96,7 +91,7 @@ static void domd(lj_t *lj)
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
-    k = alged_getf(al, lj->epots) + 1/tp0;
+    k = alged_getf(al, lj->epots);
     if (boundary == 1 && (lj->epots < epmin || lj->epots > epmax))
       k = 1.;
     k = dblmax(k, 0.05/tp0); /* the minimal scaling */
@@ -109,14 +104,14 @@ static void domd(lj_t *lj)
     if (t % seglen == 0) {
       u1 = lj->epots;
       du = u1 - u0;
-      alged_update(al, u0, du, alf0, alfc, mindata,
-          boundary, derm, derp, mfmax, &alf, &duc);
+      alged_fupdate(al, u0, du, alf0, alfc, &alf, 
+          delmax, &ave2, 0, mfmax);
       u0 = u1; /* set the new start point */
     }
 
     if (t % nevery == 0) {
-      printf("t %g, ep %.2f, du %+.3f, %+.3f, k %g, alf %g\n",
-        1.*t, lj->epots, du, duc, k, alf);
+      printf("t %g, ep %.2f, du %+.3f, k %g, alf %g, e^2 %g\n",
+        1.*t, lj->epots, du, k, alf, ave2);
 
       if (t % nreport == 0) {
         alged_save(al, fnout);

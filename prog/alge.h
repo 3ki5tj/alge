@@ -18,7 +18,7 @@ typedef struct {
  *
  * (hybrid) MC:
  *  alge_getacc()  get acceptance rate for a move
- *  alge_update()  update mean force
+ *  alge_fupdate()  update mean force
  *
  * low level MD/MC:
  *  alge_getf()    get mean force, for MD
@@ -79,57 +79,6 @@ INLINE double alge_getalpha(const alge_t *al, int i, double a0, double ac)
 }
 
 
-/* return the correction: (-1/2) d < dx^2 > / dx
- * the updating seeks the fixed point:
- *    < dx + corr. > = 0
- * where
- *    corr. =  - (1/2) d < dx^2 > / dx
- * the mean force f = d (log rho) / dx is updated as
- *   f += alpha (dx + corr.)
- *
- * the formula is derived from the detail balance
- *   rho(x) p(x, eps) = rho(x + eps) p(x + eps, -eps)
- * if rho(x) == rho(x + eps), then
- *   \int p(x, eps) eps = \int p(x, -eps) eps + \int dp/dx eps^2
- * which is < eps > = -<eps> + d < eps^2 > / dx
- *
- * `mindata' is the minimal number of data points to use the corrections
- *  since the correction uses numerical differentiation, insufficient
- *  data points makes the correction unreliable
- *
- * the smooth boundary condition is effected by the two parameters
- * `derm' and `derp', which are the absolute values of the offsets
- * to the mean force that discourage moves reaching out of (xmin, xmax)
- * */
-INLINE double alge_getcorr(const alge_t *al, int i,
-    double mindata, int refl, double derm, double derp)
-{
-  int im = i - 1, ip = i + 1;
-  double e2o, e2n, dx = 2 * al->dx;
-
-  /* the correction is adjusted by the boundary conditions
-   * for a smooth boundary, we try to use `derm' and `derp',
-   * which are to be gauged carefully by experimenting,
-   * to the make the distribution continuous */
-  if (im < 0) {
-    /* an artifically negative `f' makes more negative
-      * which encourages a positive `dx' to get back in range */
-    if (!refl) return -derm; /* else return 0; */
-    /* for a reflective boundary, it's okay to return 0 */
-    im = 0; ip = 1; dx = al->dx;
-  } else if (ip >= al->n) {
-    if (!refl) return derp; /* else return 0; */
-    im = al->n - 2; ip = al->n - 1; dx = al->dx;
-  }
-
-  if (al->cc[im] < mindata || al->cc[ip] < mindata)
-    return 0; /* set the correction to zero if too few data points */
-  e2o = al->e2[im]/al->cc[im];
-  e2n = al->e2[ip]/al->cc[ip];
-  return -0.5f * (e2n - e2o) / dx;
-}
-
-
 /* return the average < e^2 > at bin `i0' and `i1' */
 INLINE double alge_getden(const alge_t *al, int i0, int i1)
 {
@@ -142,19 +91,17 @@ INLINE double alge_getden(const alge_t *al, int i0, int i1)
   return (cc > 0 && e2 > 0) ? (e2 / cc) : 1.0;
 }
 
+
 /* fractional update data and mean force, with the denominator < e^2 >
  * `x0' is the start point, `dx_l' is the logical change of `x'
  * the mean force updating amplitude is min{`a0', `ac'/cc}
- * `mindata' is the minimal number of data points to apply
- *    the correction, see _getcorr()
- * `delmax' is maximal amount of the allowed e / < e^2 >
- * (`mfmin', `mfmax') is the allowed mean force range
  * `*alpha' is the updating amplitude
- * `*denom' is the < e^2 > used */
+ * `delmax' is maximal amount of the allowed 2 e / < e^2 >
+ * `*denom' is the used < e^2 >
+ * (`mfmin', `mfmax') is the allowed mean force range */
 INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
-    double a0, double ac,
-    double delmax, double mfmin, double mfmax,
-    double *alpha, double *denom)
+    double a0, double ac, double *alpha, double delmax, 
+    double *denom, double mfmin, double mfmax)
 {
   double alf, den;
   int id = alge_getidx(al, x0), idn = alge_getidx(al, x0 + dx_l);
