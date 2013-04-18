@@ -71,8 +71,7 @@ void run(void)
   double alf, dv, duc;
   int idx;
 
-  al = alged_open(rmsdmin, rmsdmax, rmsddel, alf0, alfc, mf0,
-    0, 1, mindata, derm, derp);
+  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0);
 
   go = cago_open(fnpdb, kb, ka, kd1, kd3, nbe, nbc, rcc);
   cago_initmd(go, 0.1, tp);

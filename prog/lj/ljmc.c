@@ -67,7 +67,7 @@ static void domc(lj_t *lj)
   double k, u0 = 0, u1 = 0, du = 0, alf = 0, ave2 = 0;
   double macc = 0, mtot = 1e-6;
 
-  al = alged_open(epmin, epmax, epdel, 1/tp0, 0);
+  al = alged_open(epmin, epmax, epdel, 1/tp0);
   hs = hs_open1(-800, 0, 1.0);
 
   /* try to equilibrate the system by running MD at tp0 */

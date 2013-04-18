@@ -128,7 +128,7 @@ static void run(void)
   hist_t *hsep, *hsrmsd, *hscont;
 
   alged_t *al;
-  double alf, dv, ave2;
+  double alf, ds, ave2;
   /* the actual, logical and boundary-adjusted acceptance rates */
   int acc = 0, acc_l = 0, acc_a = 0;
   double mf = 0; /* current mean force */
@@ -136,7 +136,7 @@ static void run(void)
   double segtot = 1e-6, segacc = 0;
 
   /* hybrid MC start point */
-  rv3_t *x0, *v0;
+  rv3_t *x0, *v0, *f0;
   real epot0;
 
   go = cago_open(fnpdb, kb, ka, kd1, kd3, nbe, nbc, rcc);
@@ -145,8 +145,10 @@ static void run(void)
   /* hybrid MC: save the start point */
   xnew(x0, go->n);
   xnew(v0, go->n);
+  xnew(f0, go->n);
   cago_copyvec(go, x0, go->x);
   cago_copyvec(go, v0, go->v);
+  cago_copyvec(go, f0, go->v);
   epot0 = go->epot;
   rmsd0 = cago_rmsd(go, x0, NULL);
 
@@ -154,8 +156,7 @@ static void run(void)
       go->epot, go->epotref, go->rmsd);
 
   /* open the alge object */
-  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0,
-    0 /* zeroth order mean force extrapolation */);
+  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0);
 
   if (hmcmethod == 0) { /* random velocities */
     go->dof = 3 * go->n;
@@ -192,18 +193,20 @@ static void run(void)
      * natural mean force, it can, however, be rejected due to
      * the boundary conditions, indicated by `acc_a' */
     acc = alged_getacc(al, rmsd1, rmsd0, boundary,
-        &acc_l, &drmsd_l, &acc_a, &dv);
+        &drmsd_l, &ds, &acc_l, &acc_a);
 
     if (acc) { /* keep it */
       /* set the new start point */
       segacc += 1;
       cago_copyvec(go, x0, go->x);
       cago_copyvec(go, v0, go->v);
+      cago_copyvec(go, f0, go->f);
       rmsd0 = rmsd1;
       epot0 = go->epot;
     } else { /* revert */
       cago_copyvec(go, go->x, x0);
       cago_copyvec(go, go->v, v0);
+      cago_copyvec(go, go->f, f0);
     }
 
     /* we mutate the velocities even if the trajectory is continued */
@@ -230,13 +233,13 @@ static void run(void)
 
     if (it % nevery == 0) {
       printf("t %g, T %.3f(%.3f), ep %.2f/%.2f, rmsd %.2f/%.2f, Q %d/%d=%.2f(%.2f), "
-          "alf %.6f, mf %.3f, rmsd %.2f%+.2f(%+.2f, dv %.3f, e2 %g), segacc %2.0f%%\n",
+          "alf %.6f, mf %.3f, rmsd %.2f%+.2f(%+.2f, ds %.3f, e2 %g), segacc %2.0f%%\n",
         t, go->tkin, tp,
         go->epot, hs_getave(hsep, 0, NULL, NULL),
         go->rmsd, hs_getave(hsrmsd, 0, NULL, NULL),
         nc, go->ncont, 1.0*nc/go->ncont,
         hs_getave(hscont, 0, NULL, NULL)/go->ncont,
-        alf, mf, rmsd0bk, drmsd_l, drmsd_a, dv, ave2, 100.*segacc/segtot);
+        alf, mf, rmsd0bk, drmsd_l, drmsd_a, ds, ave2, 100.*segacc/segtot);
     }
 
     if (it % nreport == 0 || t >= nsteps - 0.1) {
@@ -254,7 +257,7 @@ static void run(void)
   hs_close(hsrmsd);
   hs_close(hscont);
   alged_close(al);
-  free(x0); free(v0);
+  free(x0); free(v0); free(f0);
 }
 
 int main(int argc, char **argv)

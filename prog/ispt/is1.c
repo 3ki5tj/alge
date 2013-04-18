@@ -55,13 +55,14 @@ static void doargs(int argc, char **argv)
 /* configuration move under modified Hamiltonian, return de */
 static int move(ising_t *is, const alge_t *al, int stack[], int *nstack)
 {
-  int id, de, h, acc;
+  int id, de, h, acc, accl, accb;
+  double ds;
 
   IS2_PICK(is, id, h);
   de = 2 * h;  /* h = si * sj, which becomes -h in a flip, E = - si * sj */
   if (de != 0) {
     acc = alge_getacc(al, is->E + de, is->E, boundary,
-      NULL, &de, NULL, NULL);
+      &de, &ds, &accl, &accb);
   } else acc = 1;
 
   if (acc) {

@@ -55,7 +55,8 @@ static void doargs(int argc, char **argv)
 /* entropic sampling */
 static int move(potts_t *pt, alge_t *al, int stack[][2], int *nstack)
 {
-  int id, so, sn, de = 0, nb[PT2_Q], acc;
+  int id, so, sn, de = 0, nb[PT2_Q], acc, accl, accb;
+  double ds;
 
   PT2_PICK(pt, id, nb);
   PT2_NEWFACE(pt, id, so, sn); /* so --> sn */
@@ -63,7 +64,7 @@ static int move(potts_t *pt, alge_t *al, int stack[][2], int *nstack)
   if (de != 0) {
     /* we always use smooth boundary condition within a segment */
     acc = alge_getacc(al, pt->E + de, pt->E, 0,
-      NULL, &de, NULL, NULL);
+      &de, &ds, &accl, &accb);
   } else acc = 1;
 
   if (acc) { 
