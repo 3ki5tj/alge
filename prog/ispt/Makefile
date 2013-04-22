@@ -9,7 +9,7 @@ APP=is1 pt0 pt1
 
 all: $(APP)
 
-$(APP): Makefile zcom.h alge.h
+$(APP): Makefile zcom.h algei.h
 
 %:: %.c
 	$(CC) -o $@ $< $(LM)

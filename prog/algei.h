@@ -6,30 +6,30 @@ typedef struct {
   int n; /* number of bins */
   double *f; /* mean force array */
   double *cc, *e2; /* histogram, sum of e^2 */
-} alge_t;
+} algei_t;
 
 
 /* summary of functions
  *
  * basic:
- *  alge_open()
- *  alge_close()
- *  alge_save()
+ *  algei_open()
+ *  algei_close()
+ *  algei_save()
  *
  * (hybrid) MC:
- *  alge_getacc()  get acceptance rate for a move
- *  alge_fupdate()  update mean force
+ *  algei_getacc()  get acceptance rate for a move
+ *  algei_fupdate()  update mean force
  *
  * low level MD/MC:
- *  alge_getf()    get mean force, for MD
- *  alge_getdh()   get mean force integral, for MC
+ *  algei_getf()    get mean force, for MD
+ *  algei_getdh()   get mean force integral, for MC
  * */
 
 /* open an alge object
  * `f0' is the initial mean force */
-static alge_t *alge_open(int xmin, int xmax, int dx, double f0)
+static algei_t *algei_open(int xmin, int xmax, int dx, double f0)
 {
-  alge_t *al;
+  algei_t *al;
   int i;
 
   xnew(al, 1);
@@ -52,7 +52,7 @@ static alge_t *alge_open(int xmin, int xmax, int dx, double f0)
 }
 
 
-static void alge_close(alge_t *al)
+static void algei_close(algei_t *al)
 {
   free(al->f);
   free(al->cc);
@@ -62,7 +62,7 @@ static void alge_close(alge_t *al)
 
 
 /* return the index */
-INLINE int alge_getidx(const alge_t *al, int x)
+INLINE int algei_getidx(const algei_t *al, int x)
 {
   if (x < al->xmin) return 0;
   else if (x >= al->xmax) return al->n - 1;
@@ -71,22 +71,22 @@ INLINE int alge_getidx(const alge_t *al, int x)
 
 
 /* return the current mean force */
-INLINE double alge_getf(const alge_t *al, int x)
+INLINE double algei_getf(const algei_t *al, int x)
 {
-  return al->f[ alge_getidx(al, x) ];
+  return al->f[ algei_getidx(al, x) ];
 }
 
 
 /* return the proper upating magnitude  alpha = min{a0, ac/cc}
  * where cc is the number of data points in the bin */
-INLINE double alge_getalpha(const alge_t *al, int i, double a0, double ac)
+INLINE double algei_getalpha(const algei_t *al, int i, double a0, double ac)
 {
   return dblmin(a0, ac/al->cc[i]);
 }
 
 
 /* return the average < e^2 > at bin `i0' and `i1' */
-INLINE double alge_getden(const alge_t *al, int i0, int i1)
+INLINE double algei_getden(const algei_t *al, int i0, int i1)
 {
   double cc = al->cc[i0] + al->cc[i1];
   double e2 = al->e2[i0] + al->e2[i1];
@@ -105,7 +105,7 @@ INLINE double alge_getden(const alge_t *al, int i0, int i1)
  * `delmax' is maximal amount of the allowed 2 e / < e^2 >
  * `*den' is the used < e^2 >
  * (`mfmin', `mfmax') is the allowed mean force range */
-INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
+INLINE double algei_fupdate(algei_t *al, int x0, int dx_l,
     double a0, double ac, double *alf, double delmax,
     double *den, double mfmin, double mfmax)
 {
@@ -114,23 +114,23 @@ INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
   /* no update if the move starts from the outside */
   if (x0 < al->xmin || x0 >= al->xmax) return 0;
 
-  id = alge_getidx(al, x0);
-  idn = alge_getidx(al, x0 + dx_l);
+  id = algei_getidx(al, x0);
+  idn = algei_getidx(al, x0 + dx_l);
 
   /* update the histogram and e^2 */
   al->cc[id] += 1;
   al->e2[id] += dx_l * dx_l;
 
   /* update the mean force */
-  *alf = alge_getalpha(al, id, a0, ac); /* compute amplitude */
-  *den = alge_getden(al, id, idn); /* compute < e^2 > */
+  *alf = algei_getalpha(al, id, a0, ac); /* compute amplitude */
+  *den = algei_getden(al, id, idn); /* compute < e^2 > */
   al->f[id] += (*alf) * dblconfine(2.0 * dx_l / (*den), -delmax, delmax);
   return al->f[id] = dblconfine(al->f[id], mfmin, mfmax);
 }
 
 
 /* return the entropic difference, zeroth order */
-static double alge_getdh(const alge_t *al, int xn, int xo)
+static double algei_getdh(const algei_t *al, int xn, int xo)
 {
   int ixn, ixo, ix, sgn = 1;
   double ds = 0.;
@@ -174,14 +174,14 @@ static double alge_getdh(const alge_t *al, int xn, int xo)
  * the boundary-adjusted rate `*acc_b' rejects a move out of (xmin, xmax)
  * with a reflective boundary condition (`refl' = 1), return `*acc_b'
  *    or `acc_l' otherwise */
-INLINE int alge_getacc(const alge_t *al, int x1, int x0, int refl,
+INLINE int algei_getacc(const algei_t *al, int x1, int x0, int refl,
    int *dx_l, double *ds, int *acc_l, int *acc_b)
 {
   /* compute the logical Metropolis acceptance rate
    * ds = d log(rho) = \int^1_0 al->f
    * ds > 0 means moving to a more populated region
    * which therefore should be biased against */
-  *ds = alge_getdh(al, x1, x0);
+  *ds = algei_getdh(al, x1, x0);
   *acc_l = (*ds <= 0 || rnd0() < exp(-(*ds)));
   *dx_l = (*acc_l) ? x1 - x0 : 0;
 
@@ -197,7 +197,7 @@ INLINE int alge_getacc(const alge_t *al, int x1, int x0, int refl,
 
 
 /* save the mean force and its integral */
-static int alge_save(alge_t *al, const char *fn)
+static int algei_save(algei_t *al, const char *fn)
 {
   FILE *fp;
   int i;

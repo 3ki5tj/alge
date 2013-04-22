@@ -12,7 +12,7 @@
 #define ZCOM_ARGOPT
 //#define ZCOM_HIST
 #include "zcom.h"
-#include "alge.h"
+#include "algei.h"
 
 int epmin = -1920, epmax = 0, epdel = 16;
 double nsweeps = 1e6, nsteps;
@@ -53,7 +53,7 @@ static void doargs(int argc, char **argv)
 }
 
 /* configuration move under modified Hamiltonian, return de */
-static int move(ising_t *is, const alge_t *al, int stack[], int *nstack)
+static int move(ising_t *is, const algei_t *al, int stack[], int *nstack)
 {
   int id, de, h, acc, accl, accb;
   double ds;
@@ -61,7 +61,7 @@ static int move(ising_t *is, const alge_t *al, int stack[], int *nstack)
   IS2_PICK(is, id, h);
   de = 2 * h;  /* h = si * sj, which becomes -h in a flip, E = - si * sj */
   if (de != 0) {
-    acc = alge_getacc(al, is->E + de, is->E, boundary,
+    acc = algei_getacc(al, is->E + de, is->E, boundary,
       &de, &ds, &accl, &accb);
   } else acc = 1;
 
@@ -126,7 +126,7 @@ static void getrefbet(double *refbet, const double *logdos)
 }
 
 /* save histogram and integrate a finer density of states */
-static int saveall(const alge_t *al, const double *logdos, double *verr,
+static int saveall(const algei_t *al, const double *logdos, double *verr,
   const double *his, const char *fn)
 {
   int i, n = ECNT, ene, ie = 0;
@@ -204,14 +204,14 @@ static int saveall(const alge_t *al, const double *logdos, double *verr,
 /* entropic sampling */
 static int run(ising_t *is, double trun)
 {
-  alge_t *al;
+  algei_t *al;
   double t, *ehis, verr[8], ave2 = 0, alf = 0;
   int it = 0, u0 = 0, u1, du = 0;
   int *stack, nstack = 0;
 
   xnew(stack, seglen);
 
-  al = alge_open(epmin, epmax, epdel, beta0);
+  al = algei_open(epmin, epmax, epdel, beta0);
   /* equilibrate the system till is->E > epmin */
   for (t = 1; is->E <= epmin + 4; t++) {
     int id, h;
@@ -232,7 +232,7 @@ static int run(ising_t *is, double trun)
       u1 = is->E;
       du = u1 - u0;
       assert(u0 >= epmin && u0 < epmax);
-      alge_fupdate(al, u0, du, alf0, alfc, &alf,
+      algei_fupdate(al, u0, du, alf0, alfc, &alf,
           delmax, &ave2, 0, betmax);
       if (u1 < epmin || u1 >= epmax) { /* undo out-of-boudary segments */
         undo(is, stack, nstack);
@@ -249,12 +249,12 @@ static int run(ising_t *is, double trun)
         saveall(al, is->logdos, verr, ehis, fnhis);
         printf("trun %g, eabsave %g, eabsmax %g, erelave %g, erelmax %g\n",
           trun, verr[0], verr[1], verr[2], verr[3]);        
-        alge_save(al, fnout);
+        algei_save(al, fnout);
         it = 0; /* reset the integer counter */
       }
     }
   }
-  alge_close(al);
+  algei_close(al);
   free(ehis);
   free(stack);
   return 0;
