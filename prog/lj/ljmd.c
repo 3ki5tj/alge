@@ -22,12 +22,14 @@ int nreport = 100000; /* save data every this number of steps */
 /* algorithm E stuff */
 double epmin = -500, epmax = -300, epdel = 5;
 int seglen = 5; /* segment length for a perturbation */
-double alf0 = 0.01, alfc = 1.0; 
+double alf0 = 0.1, alfc = 1.0; 
 int boundary = 1; /* 0: smooth boundary, 1: reflective */
-double mindata = 1000.; /* minimal number of data points to use the corrections */
-double derm = 1, derp = 2; /* limiting magnitude for smooth boundaries 
-                                  larger for tighter boundaries */
+double delmax = 10.0;
 double mfmax = 100.0; /* maximal magnitude of tp0/tp */
+
+#ifdef HMC
+double hmcmutr = 1.0;
+#endif
 
 char *fnout = "lj.e";
 char *fnhis = "ep.his";
@@ -49,11 +51,8 @@ static void doargs(int argc, char **argv)
 
   argopt_add(ao, "-d", "%r",  &mddt,      "time step for molecular dynamics");
   argopt_add(ao, "-q", "%r",  &thermdt,   "thermostat time step");
-  argopt_add(ao, "-9", "%lf", &mindata,   "minimal number of data points");
   argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
   argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
-  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");
   argopt_add(ao, "-o", NULL, &fnout,      "output file");
   argopt_add(ao, "-H", NULL, &fnhis,      "histogram file");  
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
@@ -66,15 +65,20 @@ static void doargs(int argc, char **argv)
 }
 
 /* multicaonical molecular dynamics simulation */
-static void domd(lj_t *lj)
+static void domd(void)
 {
   int t;
   alged_t *al;
   hist_t *hs;
-  double k, u0, u1, du = 0, duc = 0, alf = 0;
+  double k, u0, u1, du = 0, alf = 0, ave2 = 0;
+  lj_t *lj;
+#ifdef HMC
+  rv3_t *x0, *v0, *f0;
+#endif
 
-  al = alged_open(epmin, epmax, epdel, 0., 
-      0 /* zeroth order mean force extrapolation */);
+  lj = lj_open(N, D, rho, rcdef);
+
+  al = alged_open(epmin, epmax, epdel, 1/tp0);
   hs = hs_open1(-800, 0, 1.0);
 
   /* equilibrate the system by regular MD at tp0
@@ -90,13 +94,23 @@ static void domd(lj_t *lj)
     "too hard to equilibrate the system, epot %g\n", lj->epots);
   printf("equilibrated at t %d, epot %g\n", t, lj->epots);
 
+#ifdef HMC
+  /* since we are resetting the velocities */
+  lj->dof = lj->d * lj->n;
+
+  /* back up the start point for HMC */
+  xnew(x0, lj->n);
+  xnew(v0, lj->n);
+  xnew(f0, lj->n);
+#endif
+
   /* Note: lj->epots may be replaced by lj->epot
    * but it may significantly change f */
   u0 = lj->epots;
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
-    k = alged_getf(al, lj->epots) + 1/tp0;
+    k = alged_getf(al, lj->epots);
     if (boundary == 1 && (lj->epots < epmin || lj->epots > epmax))
       k = 1.;
     k = dblmax(k, 0.05/tp0); /* the minimal scaling */
@@ -109,14 +123,29 @@ static void domd(lj_t *lj)
     if (t % seglen == 0) {
       u1 = lj->epots;
       du = u1 - u0;
-      alged_update(al, u0, du, alf0, alfc, mindata,
-          boundary, derm, derp, mfmax, &alf, &duc);
+      alged_fupdate(al, u0, du, alf0, alfc, &alf, 
+          delmax, &ave2, 0, mfmax);
+#ifdef HMC
+      if (u1 < epmin || u1 >= epmax) { /* cancel the move */ 
+        lj->epots = u1 = u0;
+        lj_copyvec(lj, lj->x, x0);
+        lj_copyvec(lj, lj->v, v0);
+        lj_copyvec(lj, lj->f, f0);
+      } else { /* set the new start point */
+        u0 = u1;
+        lj_copyvec(lj, x0, lj->x);
+        lj_copyvec(lj, v0, lj->v);
+        lj_copyvec(lj, f0, lj->f);
+      }
+      md_mutv(lj->v, lj->d * lj->n, tp0, hmcmutr);
+#else
       u0 = u1; /* set the new start point */
+#endif
     }
 
     if (t % nevery == 0) {
-      printf("t %g, ep %.2f, du %+.3f, %+.3f, k %g, alf %g\n",
-        1.*t, lj->epots, du, duc, k, alf);
+      printf("t %g, ep %.2f, du %+.3f, k %g, alf %g, e^2 %g\n",
+        1.*t, lj->epots, du, k, alf, ave2);
 
       if (t % nreport == 0) {
         alged_save(al, fnout);
@@ -125,17 +154,15 @@ static void domd(lj_t *lj)
     }
   }
   alged_close(al);
+#ifdef HMC
+  free(x0); free(v0); free(f0);
+#endif
+  lj_close(lj);
 }
 
 int main(int argc, char **argv)
 {
-  lj_t *lj;
-
   doargs(argc, argv);
-  lj = lj_open(N, D, rho, rcdef);
-
-  domd(lj);
-
-  lj_close(lj);
+  domd();
   return 0;
 }

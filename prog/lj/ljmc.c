@@ -22,11 +22,9 @@ real mcamp = 0.2f;
 /* algorithm E stuff */
 double epmin = -550, epmax = -350, epdel = 5;
 int seglen = 10; /* segment length for a perturbation */
-double alf0 = 0.01, alfc = 1.0;
+double alf0 = 0.1, alfc = 1.0;
 int boundary = 1; /* 0: smooth boundary, 1: reflective */
-double mindata = 1000.; /* minimal number of data points to use the corrections */
-double derm = 1, derp = 2; /* limiting magnitude for smooth boundaries 
-                                  larger for tighter boundaries */
+double delmax = 10.0;
 double mfmax = 100.0; /* maximal magnitude of tp0/tp */
 
 char *fnout = "lj.e";
@@ -47,11 +45,8 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
 
   argopt_add(ao, "-a", "%r",  &mcamp,     "Monte Carlo move size");
-  argopt_add(ao, "-q", "%lf", &mindata,   "minimal number of data points");
   argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
   argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
-  argopt_add(ao, "--km", "%lf", &derm,    "correction for x < xmin");
-  argopt_add(ao, "--kp", "%lf", &derp,    "correction for x > xmax");  
   argopt_add(ao, "-o", NULL, &fnout,      "output file");
   argopt_add(ao, "-H", NULL, &fnhis,      "histogram file");
   argopt_add(ao, "--every",   "%d", &nevery,  "interval of printing messages");
@@ -66,13 +61,13 @@ static void doargs(int argc, char **argv)
 /* multicanoical Monte Carlo simulation */
 static void domc(lj_t *lj)
 {
-  int ie, t;
+  int t;
   alged_t *al;
   hist_t *hs;
-  double k, u0 = 0, u1 = 0, du = 0, duc = 0, alf = 0;
+  double k, u0 = 0, u1 = 0, du = 0, alf = 0, ave2 = 0;
   double macc = 0, mtot = 1e-6;
 
-  al = alged_open(epmin, epmax, epdel, 0.0, 0);
+  al = alged_open(epmin, epmax, epdel, 1/tp0);
   hs = hs_open1(-800, 0, 1.0);
 
   /* try to equilibrate the system by running MD at tp0 */
@@ -86,7 +81,7 @@ static void domc(lj_t *lj)
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
-    k = alged_getf(al, lj->epot) + 1/tp0;
+    k = alged_getf(al, lj->epot);
     if (boundary == 1 && (lj->epot < epmin || lj->epot > epmax))
       k = 1.;
     k = dblmax(k, 0.05/tp0); /* the minimal scaling */
@@ -98,14 +93,14 @@ static void domc(lj_t *lj)
     if (t % seglen == 0) {
       u1 = lj->epot;
       du = u1 - u0;
-      alged_update(al, u0, du, alf0, alfc, mindata,
-          boundary, derm, derp, mfmax, &alf, &duc);
+      alged_fupdate(al, u0, du, alf0, alfc, &alf,
+          delmax, &ave2, 0, mfmax);
       u0 = u1;
     }
 
     if (t % nevery == 0) {
-      printf("t %g, ep %.2f, du %.3f, %.3f, k %g, alf %g, acc %2.0f%%\n",
-        1.*t, lj->epot, du, duc, k, alf, 100*macc/mtot);
+      printf("t %g, ep %.2f, du %.3f, k %g, alf %g, <e2> %g, acc %2.0f%%\n",
+        1.*t, lj->epot, du, k, alf, ave2, 100*macc/mtot);
 
       if (t % nreport == 0) {
         alged_save(al, fnout);
