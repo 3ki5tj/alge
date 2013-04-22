@@ -25,7 +25,8 @@ typedef struct {
  *  alge_getdh()   get mean force integral, for MC
  * */
 
-
+/* open an alge object
+ * `f0' is the initial mean force */
 static alge_t *alge_open(int xmin, int xmax, int dx, double f0)
 {
   alge_t *al;
@@ -33,14 +34,12 @@ static alge_t *alge_open(int xmin, int xmax, int dx, double f0)
 
   xnew(al, 1);
   al->xmin = xmin;
-  al->xmax = xmax;
   al->dx = dx; /* interval size */
   al->n = (xmax - xmin)/dx; /* number of intervals */
-  if (al->dx * al->n + xmin != xmax) {
-    al->xmax = al->xmin + al->n * al->dx;
+  al->xmax = al->xmin + al->n * al->dx;
+  if (al->dx * al->n + xmin != xmax)
     fprintf(stderr, "fix xmax, s.t. dx %d divides xmax %d - xmin %d\n",
       dx, xmax, xmin);
-  }
   xnew(al->f, al->n + 1);
   xnew(al->cc, al->n + 1);
   xnew(al->e2, al->n + 1);
@@ -107,7 +106,7 @@ INLINE double alge_getden(const alge_t *al, int i0, int i1)
  * `*den' is the used < e^2 >
  * (`mfmin', `mfmax') is the allowed mean force range */
 INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
-    double a0, double ac, double *alf, double delmax, 
+    double a0, double ac, double *alf, double delmax,
     double *den, double mfmin, double mfmax)
 {
   int id, idn;
@@ -121,8 +120,8 @@ INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
   /* update the histogram and e^2 */
   al->cc[id] += 1;
   al->e2[id] += dx_l * dx_l;
- 
-  /* update the mean force */ 
+
+  /* update the mean force */
   *alf = alge_getalpha(al, id, a0, ac); /* compute amplitude */
   *den = alge_getden(al, id, idn); /* compute < e^2 > */
   al->f[id] += (*alf) * dblconfine(2.0 * dx_l / (*den), -delmax, delmax);
@@ -130,42 +129,42 @@ INLINE double alge_fupdate(alge_t *al, int x0, int dx_l,
 }
 
 
-/* return the H difference, zeroth order */
+/* return the entropic difference, zeroth order */
 static double alge_getdh(const alge_t *al, int xn, int xo)
 {
   int ixn, ixo, ix, sgn = 1;
-  double dh = 0.;
+  double ds = 0.;
 
-  if (xo == xn) {
+  if (xn == xo) {
     return 0.;
-  } else if (xo > xn) { /* make sure xn > xo */
-    intswap(xo, xn);
+  } else if (xn < xo) { /* make sure xn > xo */
+    intswap(xn, xo);
     sgn = -1;
   }
 
   if (xo < al->xmin) { /* change `xo' such that xo >= xmin */
-    if (xn < al->xmin) return sgn * (xn - xo) * al->f[0]; 
-    dh += (al->xmin - xo)*al->f[0];
+    if (xn < al->xmin) return sgn * (xn - xo) * al->f[0];
+    ds += (al->xmin - xo) * al->f[0];
     xo = al->xmin;
   }
   if (xn >= al->xmax) { /* change `xn' such that xn < xmax */
     if (xo >= al->xmax) return sgn * (xn - xo) * al->f[al->n - 1];
-    dh += (xn - al->xmax + 1) * al->f[al->n - 1];
+    ds += (xn - al->xmax + 1) * al->f[al->n - 1];
     xn = al->xmax - 1;
   }
-  if (xo == xn) return sgn * dh; /* may happen after the trimming */
-  
+  if (xn == xo) return sgn * ds; /* may happen after the trimming */
+
   ixo = (xo - al->xmin)/al->dx;
   ixn = (xn - al->xmin)/al->dx;
-  if (ixo == ixn) { /* within a bin */
-    dh += (xn - xo) * al->f[ixo];
+  if (ixn == ixo) { /* within a bin */
+    ds += (xn - xo) * al->f[ixo];
   } else { /* cross several bins */
-    dh += (al->xmin + (ixo+1)*al->dx - xo) * al->f[ixo]
+    ds += (al->xmin + (ixo+1)*al->dx - xo) * al->f[ixo]
         + (xn - al->xmin - ixn*al->dx) * al->f[ixn];
     for (ix = ixo + 1; ix < ixn; ix++)
-      dh += al->dx * al->f[ix];
+      ds += al->dx * al->f[ix];
   }
-  return sgn * dh;
+  return sgn * ds;
 }
 
 
@@ -197,7 +196,7 @@ INLINE int alge_getacc(const alge_t *al, int x1, int x0, int refl,
 }
 
 
-/* save mean force, and its integral */
+/* save the mean force and its integral */
 static int alge_save(alge_t *al, const char *fn)
 {
   FILE *fp;
@@ -206,17 +205,19 @@ static int alge_save(alge_t *al, const char *fn)
 
   xfopen(fp, fn, "w", return -1);
 
+  /* compute the normalization factor */
   for (sc = 0, i = 0; i < al->n; i++)
     sc += al->cc[i];
   sc = 1.0/(sc * al->dx);
 
   fprintf(fp, "# %d %d %d\n", al->n, al->xmin, al->dx);
   for (i = 0; i <= al->n; i++) {
+    /* if i == al->n, assume the values of the last bin */
     if (i < al->n) {
       f = al->f[i];
       cc = al->cc[i];
       e2 = (cc > 0) ? al->e2[i] / cc : 0;
-    } /* if i == al->n, assume the values of the last bin */
+    }
     fprintf(fp, "%d %.6f %.6f %g %.6f %g\n",
       al->xmin + i * al->dx, f, lng, cc, e2, cc * sc);
     if (i < al->n) lng += al->f[i] * al->dx;

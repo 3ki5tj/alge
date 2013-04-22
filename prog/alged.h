@@ -26,9 +26,8 @@ typedef struct {
  * */
 
 
-/* open an alge object
- * `f0' is the mean force
- * see the `alged_t' description for other parameters */
+/* open an alged object
+ * `f0' is the initial mean force */
 static alged_t *alged_open(double xmin, double xmax, double dx, double f0)
 {
   alged_t *al;
@@ -105,7 +104,7 @@ INLINE double alged_getden(const alged_t *al, int i0, int i1)
  * `*den' is the used < e^2 >
  * (`mfmin', `mfmax') is the allowed mean force range */
 INLINE double alged_fupdate(alged_t *al, double x0, double dx_l,
-    double a0, double ac, double *alf, double delmax, 
+    double a0, double ac, double *alf, double delmax,
     double *den, double mfmin, double mfmax)
 {
   int id, idn;
@@ -115,7 +114,7 @@ INLINE double alged_fupdate(alged_t *al, double x0, double dx_l,
 
   id = alged_getidx(al, x0);
   idn = alged_getidx(al, x0 + dx_l);
-  
+
   /* update the histogram and e^2 */
   al->cc[id] += 1;
   al->e2[id] += dx_l * dx_l;
@@ -128,40 +127,40 @@ INLINE double alged_fupdate(alged_t *al, double x0, double dx_l,
 }
 
 
-/* return the H difference, zeroth order */
+/* return the entropic difference, zeroth order */
 INLINE double alged_getdh(const alged_t *al, double xn, double xo)
 {
   int ixn, ixo, ix, sgn = 1;
-  double dh = 0.;
-  double tol = 1e-6 * al->dx;
+  double ds = 0.;
+  double tol = al->dx * 1e-6;
 
-  if (xo > xn) { /* make sure xn > xo */
-    dblswap(xo, xn);
+  if (xn < xo) { /* make sure xn > xo */
+    dblswap(xn, xo);
     sgn = -1;
   }
 
   if (xo < al->xmin) { /* change `xo' such that xo >= xmin */
     if (xn < al->xmin) return sgn * (xn - xo) * al->f[0];
-    dh += (al->xmin - xo) * al->f[0];
+    ds += (al->xmin - xo) * al->f[0];
     xo = al->xmin;
   }
   if (xn >= al->xmax) { /* change `xn' such that xn < xmax */
     if (xo >= al->xmax) return sgn * (xn - xo) * al->f[al->n - 1];
-    dh += (xn - al->xmax + tol) * al->f[al->n - 1];
+    ds += (xn - al->xmax + tol) * al->f[al->n - 1];
     xn = al->xmax - tol;
   }
 
   ixo = (xo - al->xmin)/al->dx;
   ixn = (xn - al->xmin)/al->dx;
-  if (ixo == ixn) { /* within a bin */
-    dh += (xn - xo) * al->f[ixo];
+  if (ixn == ixo) { /* within a bin */
+    ds += (xn - xo) * al->f[ixo];
   } else { /* cross several bins */
-    dh += (al->xmin + (ixo+1)*al->dx - xo) * al->f[ixo]
+    ds += (al->xmin + (ixo+1)*al->dx - xo) * al->f[ixo]
         + (xn - al->xmin - ixn*al->dx) * al->f[ixn];
     for (ix = ixo + 1; ix < ixn; ix++)
-      dh += al->dx * al->f[ix];
+      ds += al->dx * al->f[ix];
   }
-  return sgn * dh;
+  return sgn * ds;
 }
 
 
@@ -193,7 +192,7 @@ INLINE int alged_getacc(alged_t *al, double x1, double x0, int refl,
 }
 
 
-/* save mean force and its integral */
+/* save the mean force and its integral */
 static int alged_save(alged_t *al, const char *fn)
 {
   FILE *fp;
@@ -209,11 +208,12 @@ static int alged_save(alged_t *al, const char *fn)
   sc = 1.0/(sc * al->dx);
 
   for (i = 0; i <= al->n; i++) {
+    /* if i == al->n, assume the values of the last bin */
     if (i < al->n) {
       f = al->f[i];
       cc = al->cc[i];
       e2 = (cc > 0) ? al->e2[i] / cc : 0;
-    } /* if i == al->n, assume the values of the last bin */
+    }
     fprintf(fp, "%g %.6f %.6f %g %.6f %g\n",
       al->xmin + i * al->dx, f, lng, cc, e2, cc * sc);
     if (i < al->n) lng += al->f[i] * al->dx;
