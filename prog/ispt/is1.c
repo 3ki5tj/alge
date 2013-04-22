@@ -17,7 +17,8 @@
 int epmin = -1920, epmax = 0, epdel = 16;
 double nsweeps = 1e6, nsteps;
 /* alf0 must be small enough */
-double alf0 = 1e-3, alfc = 5.0, beta0 = 0.4;
+double alf0 = 1e-3, alfc = 5.0;
+double beta0 = 0.4, beta1 = 0.4;
 int nevery  = 1000000;
 int nreport = 100000000;
 char *fnhis = "ep.his";
@@ -211,7 +212,7 @@ static int run(ising_t *is, double trun)
 
   xnew(stack, seglen);
 
-  al = algei_open(epmin, epmax, epdel, beta0);
+  al = algei_open(epmin, epmax, epdel, beta0, beta1);
   /* equilibrate the system till is->E > epmin */
   for (t = 1; is->E <= epmin + 4; t++) {
     int id, h;
@@ -248,7 +249,7 @@ static int run(ising_t *is, double trun)
       if (it % nreport == 0 || t >= nsteps - .1) {
         saveall(al, is->logdos, verr, ehis, fnhis);
         printf("trun %g, eabsave %g, eabsmax %g, erelave %g, erelmax %g\n",
-          trun, verr[0], verr[1], verr[2], verr[3]);        
+          trun, verr[0], verr[1], verr[2], verr[3]);
         algei_save(al, fnout);
         it = 0; /* reset the integer counter */
       }

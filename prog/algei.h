@@ -25,9 +25,10 @@ typedef struct {
  *  algei_getdh()   get mean force integral, for MC
  * */
 
-/* open an alge object
- * `f0' is the initial mean force */
-static algei_t *algei_open(int xmin, int xmax, int dx, double f0)
+/* open an alged object
+ * `f0' and `f1' are the two boundary values of the initial mean force */
+static algei_t *algei_open(int xmin, int xmax, int dx,
+    double f0, double f1)
 {
   algei_t *al;
   int i;
@@ -44,7 +45,7 @@ static algei_t *algei_open(int xmin, int xmax, int dx, double f0)
   xnew(al->cc, al->n + 1);
   xnew(al->e2, al->n + 1);
   for (i = 0; i <= al->n; i++) {
-    al->f[i] = f0;
+    al->f[i] = f0 + (f1 - f0) * i / al->n;
     al->cc[i] = 0.;
     al->e2[i] = 0.;
   }
@@ -94,7 +95,7 @@ INLINE double algei_getden(const algei_t *al, int i0, int i1)
    * even if the distribution is slightly tilded, the shift in `x'
    * for positive and negative `eps' should still sum to the full `eps'
    * returns unity by default */
-  return (cc > 0 && e2 > 0) ? (e2 / cc) : 1.0;
+  return (e2 > 0) ? (e2 / cc) : 1.0;
 }
 
 

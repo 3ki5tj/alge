@@ -99,7 +99,7 @@ INLINE int pch_metro(pch_t *p, real amp, real bet,
   }
 
   epot1 = pch_force(p, p->v, NULL);
-  
+
   dep = bet * (epot1 - p->epot);
 
   /* compute the dihedral and the gradients */
@@ -110,7 +110,7 @@ INLINE int pch_metro(pch_t *p, real amp, real bet,
   id = ad2_getid(al, phi0, psi0);
   fx = al->fx[id];
   fy = al->fy[id];
-  
+
   dep += fx * (phi1 - phi0) + fy * (psi1 - psi0);
   if (dep < 0 || rnd0() < exp(-dep)) {
     for (i = 0; i < n; i++)

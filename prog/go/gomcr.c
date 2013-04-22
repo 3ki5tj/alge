@@ -43,11 +43,11 @@ int doargs(int argc, char **argv)
   argopt_add(ao, "-F", "%r", &mf0, "default mean force");
   argopt_add(ao, "-f", NULL, &fnpdb, "name of the PDB file");
   argopt_add(ao, "-9", "%lf",&mindata,  "minimal number of data points");
-  argopt_add(ao, "--r0", "%lf", &rmsdmin, "minimal rmsd");
-  argopt_add(ao, "--r1", "%lf", &rmsdmax, "maximal rmsd");
-  argopt_add(ao, "--dr", "%lf", &rmsddel, "rmsd interval");
   argopt_add(ao, "--a0", "%lf", &alf0, "initial updating magnitude");
   argopt_add(ao, "--ac", "%lf", &alfc, "updating magnitude");
+  argopt_add(ao, "--r0", "%lf", &rmsdmin, "minimal rmsd");
+  argopt_add(ao, "--r1", "%lf", &rmsdmax, "maximal rmsd");
+  argopt_add(ao, "--dr", "%lf", &rmsddel, "rmsd bin size");
   argopt_add(ao, "--km", "%lf", &derm, "correction for x < xmin");
   argopt_add(ao, "--kp", "%lf", &derp, "correction for x > xmax");
   argopt_add(ao, "--every", "%d", &nevery, "print messages every this number of steps");
