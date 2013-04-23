@@ -1,10 +1,11 @@
 Notes
 ======
-* now use the reflective boundary by default (more robust)
-  but has artifacts (with --T0 and --T1 are set to be the same as -T)
+* supports both smooth and reflective boundary conditions
+  uses the reflective boundary by default, which is more robust
+  but has artifacts (if --T0 and --T1 are set to be the same as -T)
   smooth boundary needs a smaller `alf0', see Artifacts for details
 
-* the computed mean force is 1/tp, as shown in `lj.e' u 1:2
+* the computed mean force, as shown in `lj.e' u 1:2, is 1.0/tp
   it is not affected by the thermostat temperature
 
 * icc 4m7s vs gcc 4m55s
@@ -17,18 +18,21 @@ smaller bin size (--dr) requires larger --ac to get a smooth profile
 
 Artifacts v1.1
 ================
-as of b8b489f57025307766a73addd155f3e7eecb2a51
+As of b8b489f57025307766a73addd155f3e7eecb2a51
 
 Symptoms
 ~~~~~~~~~
 * At the boundary `lj.e' dips at the last bin
   but no visible effect at the left boundary
 
-* a sharp peak in the histogram immediately at the right of the right boundary (>epmax)
+* A sharp peak in the histogram immediately at the right of the right boundary (>epmax)
 
 Diagnosis
 ~~~~~~~~~~
-This is due to that the temperature outside of (xmin, xmax) has been set to tp0
+This is due to that the temperature outside of (xmin, xmax) has been set to tp0.
+The states with U > epmax are forced to lower their potential energy
+  to enter the domain, and after that they somehow retained some inertia
+  which makes the energy in next step more likely to decrease.
 
 The symptoms vanishes if with a smooth boundary condition (-b 0)
 However this solution must be accompanied by a small --a0,

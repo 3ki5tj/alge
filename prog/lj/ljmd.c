@@ -50,6 +50,10 @@ static void doargs(int argc, char **argv)
   argopt_add(ao, "-1", "%d",  &nsteps,    "number of simulation steps");
   argopt_add(ao, "-e", "%d",  &nevery,    "interval of computing temperatures");
 
+#ifdef HMC
+  argopt_add(ao, "-R", "%lf", &hmcmutr,   "probability of mutating velocities");
+#endif
+
   argopt_add(ao, "-l", "%d",  &seglen,    "the number of steps to be treated as a perturbation");
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
 
@@ -104,7 +108,7 @@ static void domd(void)
       break;
   }
   die_if (lj->epots < epmin || lj->epots >= epmax,
-    "too hard to equilibrate the system, epot %g\n", lj->epots);
+    "cannot equilibrate the system, ep %g\n", lj->epots);
   printf("equilibrated at t %d, epot %g\n", t, lj->epots);
 
 #ifdef HMC
@@ -133,7 +137,9 @@ static void domd(void)
     lj_vvx(lj, k, mddt);
     lj_shiftcom(lj, lj->v);
     lj_vrescalex(lj, tpstat, thermdt);
+#ifndef HMC
     hs_add1ez(hs, lj->epots, 0);
+#endif
 
     if (t % seglen == 0) {
       u1 = lj->epots;
@@ -156,6 +162,7 @@ static void domd(void)
 #else
       u0 = u1; /* set the new start point */
 #endif
+      hs_add1ez(hs, lj->epots, 0);
     }
 
     if (t % nevery == 0) {

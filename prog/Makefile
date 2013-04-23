@@ -12,4 +12,6 @@ subdirs=ispt lj go xy pmer
 clean:
 	rm -f $(APP) *~ a.out *.dat *.his *.dis *.pos *.e
 	-for d in $(subdirs); do ($(MAKE) -C $$d clean); done
+	-rstrip.py -R *.[ch] *.py *.ma *.txt README* *akefile
+
 

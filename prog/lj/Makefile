@@ -5,13 +5,17 @@
 CC=icc -O3 -Wall -Wunused -march=native
 LM=
 
-APP=ljmd ljmc
+app = ljmd ljmc
+app_hmc = ljmd_hmc
 
-all: $(APP)
+all: $(app) $(app_hmc)
 
-$(APP): % : %.c Makefile zcom.h alged.h
+$(app): % : %.c Makefile zcom.h alged.h
 	$(CC) -o $@ $< $(LM)
 
+$(app_hmc): %_hmc : %.c Makefile zcom.h alged.h
+	$(CC) -DHMC -o $@ $< $(LM)
+
 clean:
-	rm -f $(APP) *~ a.out *.dat *.his *.dis *.pos *.e
+	rm -f $(app) $(app_hmc) *~ a.out *.dat *.his *.dis *.pos *.e
 
