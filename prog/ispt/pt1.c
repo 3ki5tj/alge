@@ -12,11 +12,12 @@
 #define ZCOM_ARGOPT
 #define ZCOM_POTTS2
 #include "zcom.h"
-#include "alge.h"
+#include "algei.h"
 
 int epmin = -1920, epmax = -800, epdel = 16, order = 0;
 double nsweeps = 1000000, nsteps;
-double alf0 = 5e-4, alfc = 1.0, beta0 = 1.4;
+double alf0 = 5e-4, alfc = 1.0;
+double beta0 = 1.4, beta1 = 1.4;
 int nevery  = 1000000;
 int nreport = 100000000;
 char *fnhis = "ep.his";
@@ -53,7 +54,7 @@ static void doargs(int argc, char **argv)
 }
 
 /* entropic sampling */
-static int move(potts_t *pt, alge_t *al, int stack[][2], int *nstack)
+static int move(potts_t *pt, algei_t *al, int stack[][2], int *nstack)
 {
   int id, so, sn, de = 0, nb[PT2_Q], acc, accl, accb;
   double ds;
@@ -63,11 +64,11 @@ static int move(potts_t *pt, alge_t *al, int stack[][2], int *nstack)
   de = nb[so] - nb[sn];
   if (de != 0) {
     /* we always use smooth boundary condition within a segment */
-    acc = alge_getacc(al, pt->E + de, pt->E, 0,
+    acc = algei_getacc(al, pt->E + de, pt->E, 0,
       &de, &ds, &accl, &accb);
   } else acc = 1;
 
-  if (acc) { 
+  if (acc) {
     PT2_FLIP(pt, id, so, sn, nb);
     stack[ *nstack ][0] = id;
     stack[ *nstack ][1] = so;
@@ -92,7 +93,7 @@ static void undo(potts_t *pt, int stack[][2], int nstack)
 }
 
 /* save histogram and integrate a finer density of states */
-static int saveall(alge_t *al, double *his, const char *fn)
+static int saveall(algei_t *al, double *his, const char *fn)
 {
   int i, n = ECNT, ie, ene;
   FILE *fp;
@@ -134,7 +135,7 @@ static int saveall(alge_t *al, double *his, const char *fn)
   for (i = 0; i < ECNT; i++) {
     if (his[i] < 0.5)  continue;
     fprintf(fp, "%d %g %.6f %.6f\n",
-      EMIN + i * EDEL, his[i]*fac, 
+      EMIN + i * EDEL, his[i]*fac,
       bet[i], lng[i]);
   }
   fclose(fp);
@@ -143,19 +144,19 @@ static int saveall(alge_t *al, double *his, const char *fn)
   free(lng);
   return 0;
 }
- 
+
 /* entropic sampling */
 static void run(void)
 {
   potts_t *pt = pt2_open(L, PT2_Q);
-  alge_t *al;
+  algei_t *al;
   double *ehis, t, ave2 = 0, alf = 0;
   int it = 0, u1, u0, du;
   int (*stack)[2], nstack = 0;
 
   xnew(stack, seglen);
 
-  al = alge_open(epmin, epmax, epdel, beta0);
+  al = algei_open(epmin, epmax, epdel, beta0, beta1);
   /* equilibrate the system till pt->E > epmin */
   for (; pt->E <= epmin + 4;) {
     int id, so, sn, nb[PT2_Q];
@@ -166,7 +167,7 @@ static void run(void)
   printf("equilibration finished, E %d\n", pt->E);
 
   xnew(ehis, ECNT);
-  
+
   u0 = pt->E;
 
   for (t = 1; t <= nsteps; t++) {
@@ -177,7 +178,7 @@ static void run(void)
       u1 = pt->E;
       du = u1 - u0;
       assert(u0 >= epmin && u0 < epmax);
-      alge_fupdate(al, u0, du, alf0, alfc, &alf, 
+      algei_fupdate(al, u0, du, alf0, alfc, &alf,
             delmax, &ave2, 0, betmax);
       if (u1 < epmin || u1 >= epmax) { /* undo out-of-boudary segments */
         undo(pt, stack, nstack);
@@ -192,12 +193,12 @@ static void run(void)
 
       if (it % nreport == 0 || t >= nsteps - .1) {
         saveall(al, ehis, fnhis);
-        alge_save(al, fnout);
+        algei_save(al, fnout);
         it = 0; /* reset the integer counter */
       }
     }
   }
-  alge_close(al);
+  algei_close(al);
   pt2_close(pt);
   free(ehis);
   free(stack);

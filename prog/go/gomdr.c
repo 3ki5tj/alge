@@ -49,7 +49,7 @@ double alf0 = 0.1, alfc = 10.0;
 int boundary = 1; /* how to handle boundary conditions,
     0: smooth (requires proper `derm' and `derp' values)
     1: reflective or hard (no out-of-boundary-transitions) */
-double mf0 = 0; /* initial mean force */
+double mf0 = 0, mf1 = 0; /* initial mean forces at the two boundaries  */
 double delmax = 10.0; /* maximal allowed 2 e / < e^2 > */
 double mfmax = 100.0; /* maximal mean force magnitude */
 
@@ -74,12 +74,13 @@ static void doargs(int argc, char **argv)
   /* algorithm-E parameters */
   argopt_add(ao, "-l", "%d",  &seglen,    "segment length");
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
-  argopt_add(ao, "-F", "%lf", &mf0,       "initial mean force");
   argopt_add(ao, "--a0", "%lf", &alf0,    "initial updating magnitude");
   argopt_add(ao, "--ac", "%lf", &alfc,    "updating magnitude");
   argopt_add(ao, "--r0", "%lf", &rmsdmin, "minimal rmsd");
   argopt_add(ao, "--r1", "%lf", &rmsdmax, "maximal rmsd");
-  argopt_add(ao, "--dr", "%lf", &rmsddel, "rmsd interval");
+  argopt_add(ao, "--dr", "%lf", &rmsddel, "rmsd bin size");
+  argopt_add(ao, "--f0", "%lf", &mf0,     "initial mean force at the left");
+  argopt_add(ao, "--f1", "%lf", &mf1,     "initial mean force at the right");
 
   argopt_add(ao, "--every",   "%d", &nevery,  "print messages every this number of steps");
   argopt_add(ao, "--report",  "%d", &nreport, "save data every this number of steps");
@@ -156,7 +157,7 @@ static void run(void)
       go->epot, go->epotref, go->rmsd);
 
   /* open the alge object */
-  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0);
+  al = alged_open(rmsdmin, rmsdmax, rmsddel, mf0, mf1);
 
   if (hmcmethod == 0) { /* random velocities */
     go->dof = 3 * go->n;
@@ -176,7 +177,7 @@ static void run(void)
     cago_vv(go, 1.f, mddt);
     cago_rmcom(go, go->x, go->v);
     cago_vrescale(go, tp, thermdt);
-    
+
     /* keep doing basic MD */
     if (++it % seglen != 0) continue;
 

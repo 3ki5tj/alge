@@ -1,9 +1,9 @@
 
 # optimized compiling
-CC=gcc -O3 -Wall -Wunused -march=native
-LM=-lm
-#CC=icc -O3 -Wall -Wunused -march=native
-#LM=
+#CC=gcc -O3 -Wall -Wunused -march=native
+#LM=-lm
+CC=icc -O3 -Wall -Wunused -march=native
+LM=
 
 APP=ljmd ljmc
 

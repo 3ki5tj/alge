@@ -52,8 +52,8 @@ double alf0 = 0.01, alfc = 1.0;
 int boundary = 1; /* how to handle boundary conditions,
     0: smooth (requires proper `derm' and `derp' values)
     1: reflective or hard (no out-of-boundary-transitions) */
-double mf0 = 0; /* initial mean force */
-double delmax = 10.0; /* maximal 2 e / < e^2 > */ 
+double mf0 = 0, mf1 = 0; /* initial mean forces at the two boundaries */
+double delmax = 10.0; /* maximal 2 e / < e^2 > */
 double mfmax = 1.0; /* maximal mean force magnitude */
 
 /* handle command-line arguments */
@@ -74,12 +74,13 @@ static void doargs(int argc, char **argv)
   /* algorithm-E parameters */
   argopt_add(ao, "-l", "%d",  &seglen,    "segment length");
   argopt_add(ao, "-b", "%d",  &boundary,  "boundary condition, 0: smooth, 1: reflective (hard)");
-  argopt_add(ao, "-F", "%lf", &mf0,       "initial mean force");
   argopt_add(ao, "--a0",  "%lf", &alf0,   "initial updating magnitude");
   argopt_add(ao, "--ac",  "%lf", &alfc,   "updating magnitude");
   argopt_add(ao, "--Q0",  "%lf", &Qmin,   "minimal contact fraction");
   argopt_add(ao, "--Q1",  "%lf", &Qmax,   "maximal contact fraction");
-  argopt_add(ao, "--dQ",  "%lf", &Qdel,   "contact fraction interval");
+  argopt_add(ao, "--dQ",  "%lf", &Qdel,   "contact fraction bin size");
+  argopt_add(ao, "--f0",  "%lf", &mf0,    "initial mean force at the left boundary");
+  argopt_add(ao, "--f1",  "%lf", &mf1,    "initial mean force at the right boundary");
 
   argopt_add(ao, "--every",   "%d", &nevery,  "print messages every this number of steps");
   argopt_add(ao, "--report",  "%d", &nreport, "save data every this number of steps");
@@ -130,7 +131,7 @@ static void run(void)
   contmin = go->ncont * Qmin;
   contmax = go->ncont * Qmax;
   if ((contdel = go->ncont * Qdel) < 1) contdel = 1;
-  al = alged_open(contmin, contmax, contdel, mf0);
+  al = alged_open(contmin, contmax, contdel, mf0, mf1);
 
   if (hmcmethod == 0) { /* random velocities */
     go->dof = 3 * go->n;
@@ -199,7 +200,7 @@ static void run(void)
 
     if (it % nevery == 0) {
       printf("t %g, T %.3f(%.3f), ep %.2f/%.2f, rmsd %.2f/%.2f, Q %d/%d=%.2f(%.2f), "
-          "alf %.6f, mf %.3f, nc %d%+.0f(%+d, ds %.3f, <e^2> %g), segacc %2.0f\n",
+          "alf %.6f, mf %.3f, nc %d%+.0f(%+d, ds %.3f, <e^2> %g), segacc %2.0f%%\n",
         t, go->tkin, tp,
         go->epot, hs_getave(hsep, 0, NULL, NULL),
         go->rmsd, hs_getave(hsrmsd, 0, NULL, NULL),

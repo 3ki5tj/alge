@@ -37,7 +37,7 @@ static void doargs(int argc, char **argv)
 #define DIM 2
 
 /* wrap coordinates to (-pi, pi) */
-INLINE double WRAP(double x) { 
+INLINE double WRAP(double x) {
   while (x < -M_PI) x += 2*M_PI;
   while (x >= M_PI) x -= 2*M_PI;
   return x;
@@ -47,7 +47,7 @@ INLINE double WRAP(double x) {
 INLINE double DIFF(double x, double y)
 {
   double dx = x - y;
-  
+
   if (dx > M_PI) return dx - 2 * M_PI;
   else if (dx < -M_PI) return dx + 2 * M_PI;
   else return dx;
@@ -66,7 +66,7 @@ double force(double r[], double f[])
 {
   double ep = 1.;
   int i, j;
-  
+
   for (i = 0; i < DIM; i++) {
     f[i] = 1.;
     for (j = 0; j < DIM; j++) {
@@ -93,7 +93,7 @@ static int run(void)
   double x0 = 0, y0 = 0, x1 = 0, y1 = 0, dx, dy, alf = 0;
   ad2_t *al;
   hist2_t *hs;
-  
+
   al = ad2_open(-M_PI, M_PI, 0.628, -M_PI, M_PI, 0.628,
      0.001, 1.0, 0.0, 0.0);
   hs = hs2_opensqr1(-M_PI, M_PI, 0.1);
@@ -104,11 +104,11 @@ static int run(void)
     v[i] = grand0() * sqrt(tp);
   }
   force(r, f);
-  
+
   x0 = r[0];
   y0 = r[1];
   id = ad2_getid(al, x0, y0);
-  
+
   vxp = exp(-.5 * .5 * mddt * gam);
   amp = sqrt(2 * tp * .5 * gam * mddt);
   for (t = 1; t <= nsteps; t++) {
@@ -135,7 +135,7 @@ static int run(void)
       v[i] *= vxp;
     }
 
-/*    
+/*
     if (t % 10 == 0) {
       i = (int) (rnd0() * 2);
       v[i] = sqrt(tp) * grand0();
@@ -144,7 +144,7 @@ static int run(void)
 
     /* register */
     hs2_add1ez(hs, v[0], v[1], 0);
-    
+
     if (t % seglen == 0) {
       static const double fcmax = 1000000000.0;
 
@@ -153,11 +153,11 @@ static int run(void)
       dx = DIFF(x1, x0);
       dy = DIFF(y1, y0);
       ad2_add(al, id, dx, dy);
-/*      
+/*
       ad2_getcorr(al, id, &delx, &dely);
       dx += delx;
       dy += dely;
-*/      
+*/
       alf = 0.1;
       al->fx[id] = dblconfine(al->fx[id] + dx * alf, -fcmax, fcmax);
       al->fy[id] = dblconfine(al->fy[id] + dy * alf, -fcmax, fcmax);
@@ -166,7 +166,7 @@ static int run(void)
       x0 = x1;
       y0 = y1;
       id = ad2_getid(al, x0, y0);
-      
+
       if (t % nevery == 0) {
         printf("t %d, x %g, y %g\n", t, r[0], r[1]);
       }

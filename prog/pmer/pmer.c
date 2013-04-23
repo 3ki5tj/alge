@@ -82,7 +82,7 @@ static void pch_getdihf(rv3_t *x, real *phi, real *psi, rv3_t *fx, rv3_t *fy)
 */
   dihcalc_t dc[2];
   int i;
-  
+
   memset(dc, 0, sizeof(dc[0]) * 2);
   dc[0].szreal = dc[1].szreal = sizeof(real);
   *phi = rv3_calcdih(dc, x[0], x[1], x[2], x[3], DIH_FOUR|DIH_GRAD);
@@ -104,7 +104,7 @@ INLINE int pch_vv(pch_t *p, real fscal, real dt,
     rv3_sinc(p->x[i], p->v[i], dt);
   }
   p->epot = pch_force(p, p->x, p->f);
-  
+
   /* compute the dihedral and the gradients */
   pch_getdihf(p->x + idih0, phi, psi, gx, gy);
   /* get the amplitude of the dihedral force */
@@ -116,7 +116,7 @@ INLINE int pch_vv(pch_t *p, real fscal, real dt,
     rv3_sinc(p->f[idih0 + i], gx[i], fx);
     rv3_sinc(p->f[idih0 + 1 + i], gy[i], fy);
   }
-  
+
   for (i = 0; i < n; i++) {
     rv3_sinc(p->v[i], p->f[i], dtf);
   }
