@@ -2,7 +2,7 @@
 # optimized compiling
 #CC=gcc -O3 -Wall -Wunused -march=native
 #LM=-lm
-CC=icc -O3 -Wall -Wunused -march=native
+CC=icc -O3 -Wall -Wunused 
 LM=
 
 app = ljmd ljmc
