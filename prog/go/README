@@ -4,11 +4,11 @@ Overview
 The purpose of the programs here is to sampling a flat distribution in MD
   along a reaction coordinates whose derivatives are not readily computed.
 The technique used here is hybrid MC that threat a short MD segment as
-  Monte Carlo trial, and accept it only by a probability computed from 
+  Monte Carlo trial, and accept it only by a probability computed from
   integrating the mean force.
 
 
- Code 
+ Code
 =======
  *  gomdr:    flat distribution along RMSD in MD
  *  gomcr:    flat distribution along RMSD in MC (for comparison)

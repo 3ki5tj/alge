@@ -31,10 +31,6 @@ double delmax = 10.0;
 double mfmax = 100.0; /* maximal magnitude of 1/tp */
 double mfmin = 0.05; /* minimal magnitude of 1/tp */
 
-#ifdef HMC
-double hmcmutr = 1.0;
-#endif
-
 char *fnout = "lj.e";
 char *fnhis = "ep.his";
 
@@ -73,6 +69,11 @@ static void doargs(int argc, char **argv)
   if (tpmin <= 0) tpmin = tpstat;
   if (tpmax <= 0) tpmax = tpstat;
 
+#ifdef HMC
+  die_if (boundary != 1,
+      "HMC version only supports reflective boundary not %d", boundary);
+#endif
+
   argopt_dump(ao);
   argopt_close(ao);
 }
@@ -84,12 +85,10 @@ static void domd(void)
   alged_t *al;
   hist_t *hs;
   double k, u0, u1, du = 0, alf = 0, ave2 = 0;
-  lj_t *lj;
+  lj_t *lj = lj_open(N, D, rho, rcdef);
 #ifdef HMC
   rv3_t *x0, *v0, *f0;
 #endif
-
-  lj = lj_open(N, D, rho, rcdef);
 
   al = alged_open(epmin, epmax, epdel, 1/tpmin, 1/tpmax);
   hs = hs_open1(-7.*lj->n, 0, 1.0);
@@ -104,22 +103,22 @@ static void domd(void)
       break;
   }
   die_if (lj->epots < epmin || lj->epots >= epmax,
-    "too hard to equilibrate the system, epot %g\n", lj->epots);
+    "cannot equilibrate the system, ep %g\n", lj->epots);
   printf("equilibrated at t %d, epot %g\n", t, lj->epots);
-
-#ifdef HMC
-  /* since we are resetting the velocities */
-  lj->dof = lj->d * lj->n;
-
-  /* back up the start point for HMC */
-  xnew(x0, lj->n);
-  xnew(v0, lj->n);
-  xnew(f0, lj->n);
-#endif
 
   /* Note: lj->epots may be replaced by lj->epot
    * but it may significantly change f */
   u0 = lj->epots;
+
+#ifdef HMC
+  /* back up the starting point */
+  xnew(x0, lj->n);
+  xnew(v0, lj->n);
+  xnew(f0, lj->n);
+  lj_copyvec(lj, x0, lj->x);
+  lj_copyvec(lj, v0, lj->v);
+  lj_copyvec(lj, f0, lj->f);
+#endif HMC
 
   /* real simulation */
   for (t = 1; t <= nsteps; t++) {
@@ -141,21 +140,23 @@ static void domd(void)
       alged_fupdate(al, u0, du, alf0, alfc, &alf,
           delmax, &ave2, mfmin, mfmax);
 #ifdef HMC
-      if (u1 < epmin || u1 >= epmax) { /* cancel the move */
+      if ((u0 >= epmin || u0 <  epmax) 
+       && (u1 <  epmin || u1 >= epmax) ) { /* reject the move */
+        int ii;
+
         lj->epots = u1 = u0;
         lj_copyvec(lj, lj->x, x0);
         lj_copyvec(lj, lj->v, v0);
         lj_copyvec(lj, lj->f, f0);
-      } else { /* set the new start point */
-        u0 = u1;
+        for (ii = 0; ii < lj->n * lj->d; ii++)
+          lj->v[ii] = -lj->v[ii];
+      } else {
         lj_copyvec(lj, x0, lj->x);
         lj_copyvec(lj, v0, lj->v);
         lj_copyvec(lj, f0, lj->f);
       }
-      md_mutv(lj->v, lj->d * lj->n, tpstat, hmcmutr);
-#else
-      u0 = u1; /* set the new start point */
 #endif
+      u0 = u1; /* set the new start point */
     }
 
     if (t % nevery == 0) {
@@ -168,10 +169,10 @@ static void domd(void)
       }
     }
   }
-  alged_close(al);
 #ifdef HMC
   free(x0); free(v0); free(f0);
 #endif
+  alged_close(al);
   lj_close(lj);
 }
 

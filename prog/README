@@ -1,0 +1,80 @@
+========
+  Code
+========
+Common routines
+  alge.h    for discrete Ising/Potts models
+  alged.h   for continuous models (LJ/Go)
+  alged2.h  for 2D distributions (unsuccessful)
+
+Subdirectories
+  ispt    Ising/Potts model (uses alge.h)
+  lj      Lennard-Jones MD (uses alged.h)
+  go      Go model (uses alged.h)
+  xy      simple 2D distribution (uses alged2.h)
+  pmer    polymer 2D dihedrals (unsuccessful)
+
+--------
+  ispt
+--------
+
+pt0.c       self-contained version of algorithm E on 2D Potts model
+            does not use alge.h
+            simple updating, quick and dirty entropic sampling,
+            does not produce flat histogram
+pt1.c       algorithm E on 2D Potts model,
+            corrected updating for the flat histogram
+is1.c       algorithm E for 2D Ising model, flat histogram
+
+Note: for is1.c, amp0 the maximal allowable updating amplitude, needs to be restricted.
+
+
+--------
+  lj
+--------
+
+ljmd.c      molecular dynamics on a Lennard-Jones fluid
+ljmd0.c     constant temperature molecular dynamics simulation, as a reference
+ljmc.c      Monte Carlo version of ljmd.c, as a reference
+
+
+-------
+  xy
+-------
+xy code for md requires a seglen of 50 to be effective.
+This may be true for smaller degrees of freedom.
+
+
+========
+ Notes
+========
+
+Note: the thermostat size (thermdt) does not appear to change the curve < eps^2 >_U significantly,
+or have any effect on the convergence at all.
+
+Trying to see if alfc and alf0 make differences,
+it appears that alf0 is important for -l 3
+so, the nonflatness observed for -l 3 is purely due to lack of convergence.
+
+Try to see if shaking up the thermostat works.
+  (now if the -l 3 nonflatness is due to lack of convergence,
+   i.e. alf0 too small, and since thermdt does not matter
+   this should not be matter)
+
+
+=================================================================================================
+
+
+
+    /* the velocity swap preserves the total momentum and kinetic energy */
+    if (nvswap > 0 && t % nvswap == 0) {
+      int id, jd;
+      id = (int) (lj->n * rnd0());
+      jd = (int) ((lj->n - 1) * rnd0());
+      if (jd >= id) jd++;
+      dblswap(lj->v[D*id], lj->v[D*jd]);
+      dblswap(lj->v[D*id+1], lj->v[D*jd+1]);
+      dblswap(lj->v[D*id+2], lj->v[D*jd+2]);
+    }
+
+int nvswap = 0; /* frequency of velocity swap */
+  argopt_add(ao, "-Y", "%d", &nvswap,   "number of steps of swapping velocities");
